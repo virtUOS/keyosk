@@ -29,13 +29,18 @@ func main() {
 	healthcheck := flag.Bool("healthcheck", false, "check /healthz of the running server and exit")
 	resync := flag.Bool("resync-limits", false, "mark every key for a limit resync by the running server and exit")
 	makeAdminID := flag.Int64("make-admin", 0, "give the account with this ID the admin panel and exit")
+	backupFile := flag.String("backup", "", "write a consistent copy of the database to this file, replacing an older backup there, and exit")
 	flag.Parse()
-	// The ID has no "not given" value: -make-admin 0 must fail, not start a
-	// server, so whether the flag was given is asked of the flag package.
-	makeAdminSet := false
+	// Neither flag has a "not given" value: -make-admin 0 and -backup "" (an
+	// unset variable in a cron job) must fail, not start a server, so whether
+	// a flag was given is asked of the flag package.
+	makeAdminSet, backupSet := false, false
 	flag.Visit(func(f *flag.Flag) {
-		if f.Name == "make-admin" {
+		switch f.Name {
+		case "make-admin":
 			makeAdminSet = true
+		case "backup":
+			backupSet = true
 		}
 	})
 
@@ -72,6 +77,16 @@ func main() {
 	if makeAdminSet {
 		if err := makeAdmin(context.Background(), config.DBPath(), config.AdminGroupSet(), *makeAdminID, os.Stdout); err != nil {
 			fmt.Fprintf(os.Stderr, "make admin failed: %v\n", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
+	// Back up the database while the server runs. Needs only DB_PATH, like
+	// -resync-limits, so a cron job can run it with a minimal environment.
+	if backupSet {
+		if err := backupDatabase(context.Background(), config.DBPath(), *backupFile, os.Stdout); err != nil {
+			fmt.Fprintf(os.Stderr, "backup failed: %v\n", err)
 			os.Exit(1)
 		}
 		os.Exit(0)
