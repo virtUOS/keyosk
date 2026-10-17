@@ -35,13 +35,15 @@ type Config struct {
 	OIDCIssuerURL    string
 	OIDCClientID     string
 	OIDCClientSecret string
-	OIDCRedirectURL  string
 
 	// OIDCExtraScopes are requested on top of openid, profile and email. Some
 	// IdPs (Dex, Okta, Authentik) put group membership in the ID token only
 	// when the groups scope is asked for; Keycloak needs nothing here.
 	OIDCExtraScopes []string
 
+	// FrontendURL is the address people reach the portal at: the root of
+	// its own host name, with no path. The OIDC callback, the link in expiry
+	// emails and the redirect after logout all live under it.
 	FrontendURL string
 
 	// AdminGroup, when set, hands admin rights to the login system: an account
@@ -73,7 +75,7 @@ type Config struct {
 	MetricsToken string
 
 	ListenAddr string
-	// CookieSecure is true when OIDC_REDIRECT_URL is https. Cookies are then
+	// CookieSecure is true when FRONTEND_URL is https. Cookies are then
 	// Secure and __Host- prefixed, and responses carry HSTS.
 	CookieSecure bool
 
@@ -141,7 +143,8 @@ var obsoleteSettings = []ObsoleteSetting{
 	{"ADMIN_IDS", adminRecordedOnAccount},
 	{"ADMIN_EMAILS", adminRecordedOnAccount},
 	{"ADMIN_ROLE", adminRecordedOnAccount},
-	{"COOKIE_SECURE", "cookies are secure when OIDC_REDIRECT_URL is https"},
+	{"COOKIE_SECURE", "cookies are secure when FRONTEND_URL is https"},
+	{"OIDC_REDIRECT_URL", "the OIDC callback is FRONTEND_URL/callback"},
 }
 
 const adminRecordedOnAccount = "admin rights are recorded on the account, see https://virtuos.github.io/keyosk/administrators/"
@@ -161,7 +164,6 @@ func Load() (*Config, error) {
 		OIDCIssuerURL:    requireEnv("OIDC_ISSUER_URL"),
 		OIDCClientID:     requireEnv("OIDC_CLIENT_ID"),
 		OIDCClientSecret: requireEnv("OIDC_CLIENT_SECRET"),
-		OIDCRedirectURL:  requireEnv("OIDC_REDIRECT_URL"),
 
 		FrontendURL: requireEnv("FRONTEND_URL"),
 
@@ -212,12 +214,15 @@ func Load() (*Config, error) {
 		}
 	}
 
+	cfg.FrontendURL, err = frontendRoot(cfg.FrontendURL)
+	if err != nil {
+		return nil, err
+	}
 	// The cookies and HSTS depend on what the browser sees, also when a
-	// reverse proxy in front ends TLS. The redirect URL is the one address
-	// whose scheme is known to be right: with a wrong one, nobody could log
-	// in. A URL that does not parse breaks the login as well.
-	redirect, err := url.Parse(cfg.OIDCRedirectURL)
-	cfg.CookieSecure = err == nil && redirect.Scheme == "https"
+	// reverse proxy in front ends TLS. FRONTEND_URL holds the OIDC callback,
+	// so its scheme is known to be right: with a wrong one, nobody could log
+	// in.
+	cfg.CookieSecure = strings.HasPrefix(cfg.FrontendURL, "https://")
 
 	dur, err := time.ParseDuration(envOr("SESSION_DURATION", "24h"))
 	if err != nil {
@@ -360,6 +365,31 @@ func (c *Config) LiteLLMUser(sub, name, email string) keyprovider.User {
 // AdminFromGroups reports whether admin rights come from the login system's
 // group claim rather than from the panel.
 func (c *Config) AdminFromGroups() bool { return c.AdminGroup != "" }
+
+// OIDCRedirectURL is where the OIDC provider returns the browser after login.
+func (c *Config) OIDCRedirectURL() string {
+	return c.FrontendURL + "/callback"
+}
+
+// frontendRoot checks that raw is the root of an http or https host, with or
+// without a trailing slash, and returns it as scheme://host. The routes, the
+// links in the pages and the __Host- cookies all sit at the root of the host,
+// so the portal cannot live under a path. The one form keeps the OIDC
+// callback, the redirect after logout and the links in emails in step, and
+// hands the identity provider a redirect URI it compares byte for byte.
+func frontendRoot(raw string) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return "", fmt.Errorf("FRONTEND_URL must be an http or https URL with no path, like https://keyosk.example.org: %q", raw)
+	}
+	// Anything beyond the host, a path, query, fragment or user info, makes
+	// the two differ.
+	root := u.Scheme + "://" + u.Host
+	if !strings.EqualFold(strings.TrimSuffix(raw, "/"), root) {
+		return "", fmt.Errorf("FRONTEND_URL must be an http or https URL with no path, like https://keyosk.example.org: %q", raw)
+	}
+	return root, nil
+}
 
 func readNotice(path string) (string, error) {
 	if path == "" {
