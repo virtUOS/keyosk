@@ -1,6 +1,7 @@
 // Package e2etest holds what the end-to-end tests against a real LiteLLM
-// gateway share: where the gateway is, owners no earlier run has used, and
-// calls with the master key for what the portal's own client does not do.
+// gateway, and the seed behind the browser tests, share: where the gateway
+// is, owners no earlier run has used, and calls with the master key for what
+// the portal's own client does not do.
 //
 // The gateway is the one in dev/docker-compose.yml unless LITELLM_BASE_URL and
 // LITELLM_MASTER_KEY point elsewhere.
@@ -8,6 +9,7 @@ package e2etest
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -48,18 +50,33 @@ func Owner(t *testing.T) string {
 }
 
 // DeleteUserAtCleanup deletes the gateway user id when the test ends, for
-// users a test creates under an ID of its own making. Deleting a user that
-// was never created is fine.
+// users a test creates under an ID of its own making.
 //
 // Cleanups run last-registered first, so a user registered before its keys
 // is deleted after them.
 func DeleteUserAtCleanup(t *testing.T, id string) {
 	t.Helper()
 	t.Cleanup(func() {
-		if err := call(http.MethodPost, "/user/delete", map[string]any{"user_ids": []string{id}}, nil); err != nil {
-			t.Logf("delete gateway user %s: %v", id, err)
+		if err := DeleteUser(context.Background(), id); err != nil {
+			t.Log(err)
 		}
 	})
+}
+
+// DeleteUser deletes a gateway user, with the spend and any keys it still
+// owns; the portal's client has no call for it, since the portal never
+// deletes one. A user that was never created is fine: LiteLLM answers 404.
+func DeleteUser(ctx context.Context, id string) error {
+	resp, err := request(ctx, http.MethodPost, "/user/delete", map[string]any{"user_ids": []string{id}})
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("delete gateway user %s: %d: %.200s", id, resp.StatusCode, b)
+	}
+	return nil
 }
 
 // Call sends a request with the master key and decodes the JSON answer into
@@ -72,25 +89,9 @@ func Call(t *testing.T, method, path string, body, out any) {
 }
 
 func call(method, path string, body, out any) error {
-	var r io.Reader
-	if body != nil {
-		b, err := json.Marshal(body)
-		if err != nil {
-			return err
-		}
-		r = bytes.NewReader(b)
-	}
-	req, err := http.NewRequest(method, BaseURL()+path, r)
+	resp, err := request(context.Background(), method, path, body)
 	if err != nil {
 		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+MasterKey())
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("%s %s: %w", method, path, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
@@ -104,4 +105,30 @@ func call(method, path string, body, out any) error {
 		return fmt.Errorf("decode %s: %w", path, err)
 	}
 	return nil
+}
+
+// request sends a request with the master key, body as JSON unless nil, and
+// returns the response for the caller to judge and close.
+func request(ctx context.Context, method, path string, body any) (*http.Response, error) {
+	var r io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		r = bytes.NewReader(b)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, BaseURL()+path, r)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+MasterKey())
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("%s %s: %w", method, path, err)
+	}
+	return resp, nil
 }
