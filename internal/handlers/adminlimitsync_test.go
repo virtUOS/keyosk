@@ -79,15 +79,20 @@ func postAdminForm(t *testing.T, h http.HandlerFunc, token, path string, id int6
 // serveAdminForm posts form to h as the admin with the given session, with id
 // as the route's {id}, and returns the response whatever its status.
 func serveAdminForm(h http.HandlerFunc, token, path string, id int64, form url.Values) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
+	rec := httptest.NewRecorder()
+	h(rec, adminFormRequest(context.Background(), token, path, id, form))
+	return rec
+}
+
+// adminFormRequest builds the request serveAdminForm posts, carrying ctx so a
+// test can cancel it the way the server does when the client disconnects.
+func adminFormRequest(ctx context.Context, token, path string, id int64, form url.Values) *http.Request {
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost, path, strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.AddCookie(&http.Cookie{Name: "session_token", Value: token})
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("id", strconv.FormatInt(id, 10))
-	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
-	rec := httptest.NewRecorder()
-	h(rec, req)
-	return rec
+	return req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
 }
 
 // Every admin change that can affect what keys enforce starts a sync run, so

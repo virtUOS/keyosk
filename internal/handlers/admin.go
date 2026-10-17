@@ -147,6 +147,8 @@ func (a *Admin) RevokeUserKey(w http.ResponseWriter, r *http.Request) {
 
 	// Revoke upstream first: if that fails the key is still live, so the local
 	// row must stay to keep it revocable.
+	r, cancel := detach(r)
+	defer cancel()
 	if err := a.keys.DeleteKey(r.Context(), key.KeyRef); err != nil {
 		slog.Error("revoke: delete upstream key", "key_prefix", key.KeyPrefix, "err", err)
 		metrics.KeyOperations.WithLabelValues("revoke", "provider_error").Inc()
