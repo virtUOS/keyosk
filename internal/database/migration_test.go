@@ -38,11 +38,11 @@ func TestUniqueKeyPerUser(t *testing.T) {
 		t.Fatal(err)
 	}
 	k := &APIKey{UserID: u.ID, KeyRef: "sk-1", KeyPrefix: "sk-1", ExpiresAt: time.Now().Add(time.Hour)}
-	if err := s.CreateAPIKey(ctx, k); err != nil {
+	if _, err := s.db.NewInsert().Model(k).Exec(ctx); err != nil {
 		t.Fatalf("first key: %v", err)
 	}
 	second := &APIKey{UserID: u.ID, KeyRef: "sk-2", KeyPrefix: "sk-2", ExpiresAt: time.Now().Add(time.Hour)}
-	if err := s.CreateAPIKey(ctx, second); err == nil {
+	if _, err := s.db.NewInsert().Model(second).Exec(ctx); err == nil {
 		t.Fatal("second key for the same user was accepted; unique constraint missing")
 	}
 }
@@ -182,11 +182,11 @@ func TestFailedMigrationIsNotMarkedApplied(t *testing.T) {
 	if _, err := m.Migrate(ctx); err == nil {
 		t.Fatal("failing migration reported success")
 	}
-	if err := s.ExecRaw(ctx, `SELECT id FROM half_done`); err == nil {
+	if _, err := s.db.ExecContext(ctx, `SELECT id FROM half_done`); err == nil {
 		t.Error("half_done exists; the failed migration was not rolled back")
 	}
 	var n int
-	if err := s.QueryRowRaw(ctx, `SELECT COUNT(*) FROM bun_migrations WHERE name = ?`, name).Scan(&n); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM bun_migrations WHERE name = ?`, name).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	if n != 0 {
@@ -201,7 +201,7 @@ func TestFailedMigrationIsNotMarkedApplied(t *testing.T) {
 	if _, err := newMigrator(s.db, withLast(fixed)).Migrate(ctx); err != nil {
 		t.Fatalf("fixed migration: %v", err)
 	}
-	if err := s.ExecRaw(ctx, `SELECT id FROM half_done`); err != nil {
+	if _, err := s.db.ExecContext(ctx, `SELECT id FROM half_done`); err != nil {
 		t.Errorf("fixed migration did not run: %v", err)
 	}
 }

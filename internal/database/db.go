@@ -26,19 +26,6 @@ func NewStore(db *bun.DB) *Store {
 // Close releases the underlying database handle.
 func (s *Store) Close() error { return s.db.Close() }
 
-// ExecRaw runs a statement directly. Intended for tests that need to provoke
-// database failures; production code should use the typed methods.
-func (s *Store) ExecRaw(ctx context.Context, query string, args ...any) error {
-	_, err := s.db.ExecContext(ctx, query, args...)
-	return err
-}
-
-// QueryRowRaw runs a query returning a single row. Intended for tests that
-// need to inspect rows the typed methods do not expose.
-func (s *Store) QueryRowRaw(ctx context.Context, query string, args ...any) *sql.Row {
-	return s.db.QueryRowContext(ctx, query, args...)
-}
-
 // newMigrator records a migration as applied only once it has succeeded. By
 // default bun records it first, so a migration that failed halfway would be
 // skipped on the next start.
@@ -550,15 +537,6 @@ func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
 	return users, nil
 }
 
-func (s *Store) SetUserProfile(ctx context.Context, userID int64, profileID *int64) error {
-	_, err := s.db.NewUpdate().Model((*User)(nil)).
-		Set("profile_id = ?", profileID).
-		Set("updated_at = ?", time.Now()).
-		Where("id = ?", userID).
-		Exec(ctx)
-	return err
-}
-
 // SetUserProfileUntil assigns a profile, optionally with a deadline.
 //
 // A nil expiresAt makes the assignment permanent and clears any deadline that
@@ -656,13 +634,6 @@ func (s *Store) ReplaceAPIKey(ctx context.Context, k *APIKey) error {
 		}
 		return nil
 	})
-}
-
-func (s *Store) CreateAPIKey(ctx context.Context, k *APIKey) error {
-	k.CreatedAt = time.Now()
-	k.ExpirySetAt = k.CreatedAt
-	_, err := s.db.NewInsert().Model(k).Exec(ctx)
-	return err
 }
 
 // UpdateAPIKeyExpiry moves a key's expiry date and clears the expiry notices
@@ -861,16 +832,6 @@ func (s *Store) DeleteExpiredSessions(ctx context.Context) error {
 		Where("expires_at < ?", time.Now()).
 		Exec(ctx)
 	return err
-}
-
-// GetSessionIDToken returns the OIDC id_token for a session (used for OIDC logout).
-func (s *Store) GetSessionIDToken(ctx context.Context, sessionID int64) (string, error) {
-	sess := &Session{}
-	err := s.db.NewSelect().Model(sess).Where("id = ?", sessionID).Scan(ctx)
-	if err != nil {
-		return "", err
-	}
-	return sess.IDToken, nil
 }
 
 // --- Audit log ---

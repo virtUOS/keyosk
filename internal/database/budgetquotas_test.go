@@ -34,10 +34,10 @@ func TestMigrationConvertsTokenQuotasToBudgets(t *testing.T) {
 	}
 
 	now := time.Now()
-	if err := s.ExecRaw(ctx, `INSERT INTO profiles (name, is_default, created_at, updated_at) VALUES ('students', 0, ?, ?)`, now, now); err != nil {
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO profiles (name, is_default, created_at, updated_at) VALUES ('students', 0, ?, ?)`, now, now); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.ExecRaw(ctx, `INSERT INTO profile_quotas (profile_id, tokens, period) VALUES (1, 1500000, '24h')`); err != nil {
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO profile_quotas (profile_id, tokens, period) VALUES (1, 1500000, '24h')`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -56,7 +56,7 @@ func TestMigrationConvertsTokenQuotasToBudgets(t *testing.T) {
 	if math.Abs(got.Quotas[0].Budget-0.15) > 1e-9 || got.Quotas[0].Period != "24h" {
 		t.Errorf("window = %+v, want 0.15/24h (1.5M tokens at the nominal rate)", got.Quotas[0])
 	}
-	if err := s.ExecRaw(ctx, `SELECT tokens FROM profile_quotas`); err == nil {
+	if _, err := s.db.ExecContext(ctx, `SELECT tokens FROM profile_quotas`); err == nil {
 		t.Error("profile_quotas.tokens still exists after the migration")
 	}
 }

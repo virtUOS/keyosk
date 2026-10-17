@@ -52,7 +52,7 @@ func TestMigrationHashesStoredKeys(t *testing.T) {
 
 	now := time.Now()
 	hashed := sha256Hex("sk-already-hashed")
-	if err := s.ExecRaw(ctx, `
+	if _, err := s.db.ExecContext(ctx, `
 		INSERT INTO users (id, oidc_sub, email, name, created_at, updated_at)
 		  VALUES (1,'s1','a@b.c','A',?,?), (2,'s2','b@b.c','B',?,?);
 		INSERT INTO api_keys (user_id, litellm_key, key_prefix, expires_at, created_at)
@@ -74,7 +74,7 @@ func TestMigrationHashesStoredKeys(t *testing.T) {
 			t.Errorf("user %d: key_ref = %q, want %q", userID, k.KeyRef, want)
 		}
 	}
-	if err := s.ExecRaw(ctx, `SELECT litellm_key FROM api_keys`); err == nil {
+	if _, err := s.db.ExecContext(ctx, `SELECT litellm_key FROM api_keys`); err == nil {
 		t.Error("api_keys.litellm_key still exists after the migration")
 	}
 }
@@ -93,8 +93,9 @@ func TestScrubReportsABlockedCheckpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := NewStore(bun.NewDB(sqldb, sqlitedialect.New()))
-	t.Cleanup(func() { s.Close() })
+	db := bun.NewDB(sqldb, sqlitedialect.New())
+	t.Cleanup(func() { db.Close() })
+	s := NewStore(db)
 	if err := s.RunMigrations(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +139,7 @@ func TestKeyRefMigrationCannotBeRolledBack(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "cannot be turned back") {
 		t.Fatalf("rollback = %v, want an error saying it is irreversible", err)
 	}
-	if err := s.ExecRaw(ctx, `SELECT key_ref FROM api_keys`); err != nil {
+	if _, err := s.db.ExecContext(ctx, `SELECT key_ref FROM api_keys`); err != nil {
 		t.Errorf("key_ref gone after a refused rollback: %v", err)
 	}
 }

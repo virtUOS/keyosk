@@ -62,7 +62,7 @@ func TestAdminCannotDeleteAnAssignedProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SetUserProfile(ctx, u.ID, &p.ID); err != nil {
+	if err := store.SetUserProfileUntil(ctx, u.ID, &p.ID, nil, nil, false); err != nil {
 		t.Fatal(err)
 	}
 

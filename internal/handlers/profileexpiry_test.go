@@ -329,7 +329,7 @@ func TestDashboardSaysNothingWithoutADeadline(t *testing.T) {
 	if _, err := store.CreateProfile(ctx, p, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SetUserProfile(ctx, user.ID, &p.ID); err != nil {
+	if err := store.SetUserProfileUntil(ctx, user.ID, &p.ID, nil, nil, false); err != nil {
 		t.Fatal(err)
 	}
 

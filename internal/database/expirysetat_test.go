@@ -14,7 +14,7 @@ func TestMigrationStartsExpirySetAtAtCreation(t *testing.T) {
 	migrateBefore(t, s, "20240015")
 
 	created := time.Now().AddDate(0, 0, -10).UTC().Truncate(time.Second)
-	if err := s.ExecRaw(ctx, `
+	if _, err := s.db.ExecContext(ctx, `
 		INSERT INTO users (id, oidc_sub, email, name, created_at, updated_at)
 		  VALUES (1,'s1','a@b.c','A',?,?);
 		INSERT INTO api_keys (user_id, key_ref, key_prefix, expires_at, created_at)
@@ -57,7 +57,7 @@ func TestExpirySetAtFollowsCreateAndExtend(t *testing.T) {
 
 	// Pretend both keys were created a week ago.
 	weekAgo := time.Now().AddDate(0, 0, -7).UTC().Truncate(time.Second)
-	if err := s.ExecRaw(ctx, `UPDATE api_keys SET expiry_set_at = ?`, weekAgo); err != nil {
+	if _, err := s.db.ExecContext(ctx, `UPDATE api_keys SET expiry_set_at = ?`, weekAgo); err != nil {
 		t.Fatal(err)
 	}
 	before := time.Now().Add(-time.Second)

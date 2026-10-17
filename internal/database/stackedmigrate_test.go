@@ -14,15 +14,15 @@ func TestMigrationDropsSingleQuotaColumns(t *testing.T) {
 
 	// Selecting the dropped column must fail; if it still exists, something
 	// is writing to a column the model no longer knows about.
-	if err := s.ExecRaw(ctx, `SELECT quota_tokens FROM profiles`); err == nil {
+	if _, err := s.db.ExecContext(ctx, `SELECT quota_tokens FROM profiles`); err == nil {
 		t.Error("profiles.quota_tokens still exists after the migration")
 	}
-	if err := s.ExecRaw(ctx, `SELECT quota_period FROM profiles`); err == nil {
+	if _, err := s.db.ExecContext(ctx, `SELECT quota_period FROM profiles`); err == nil {
 		t.Error("profiles.quota_period still exists after the migration")
 	}
 
 	// The replacement table is there and usable.
-	if err := s.ExecRaw(ctx, `SELECT profile_id, budget, period FROM profile_quotas`); err != nil {
+	if _, err := s.db.ExecContext(ctx, `SELECT profile_id, budget, period FROM profile_quotas`); err != nil {
 		t.Errorf("profile_quotas not usable: %v", err)
 	}
 }
@@ -42,7 +42,7 @@ func TestDeletingProfileRemovesItsQuotas(t *testing.T) {
 	}
 
 	var n int
-	if err := s.QueryRowRaw(ctx, `SELECT COUNT(*) FROM profile_quotas WHERE profile_id = ?`, p.ID).Scan(&n); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM profile_quotas WHERE profile_id = ?`, p.ID).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	if n != 0 {

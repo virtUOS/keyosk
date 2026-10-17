@@ -176,7 +176,7 @@ func TestUpdateProfileRefusesMissingProfile(t *testing.T) {
 		}
 	}
 	var orphans int
-	if err := s.QueryRowRaw(ctx, `SELECT COUNT(*) FROM profile_quotas
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM profile_quotas
 		WHERE profile_id NOT IN (SELECT id FROM profiles)`).Scan(&orphans); err != nil {
 		t.Fatal(err)
 	}
