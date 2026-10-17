@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"errors"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -150,5 +151,27 @@ func TestRevokeUserKeyWithoutAKey(t *testing.T) {
 	}
 	if events, _ := store.ListAuditEvents(ctx, 10); len(events) != 0 {
 		t.Errorf("audit = %+v, want nothing", events)
+	}
+}
+
+// An admin whose connection drops once the key is revoked upstream must still
+// have the row removed, or the jobs keep acting on a key that is gone.
+func TestRevokeUserKeyFinishesAfterDisconnect(t *testing.T) {
+	a, store, token, fake, user := newRevokeTestAdmin(t, "revoke-disconnect")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	fake.OnDelete = cancel
+	rec := httptest.NewRecorder()
+	a.RevokeUserKey(rec, adminFormRequest(ctx, token, "/admin/users/1/key/revoke", user.ID, nil))
+
+	if got := flashOf(t, rec.Header().Get("Location")); got != "Key revoked" {
+		t.Errorf("flash = %q, want %q", got, "Key revoked")
+	}
+	if fake.LiveCount() != 0 {
+		t.Errorf("provider still holds %d keys after revoke", fake.LiveCount())
+	}
+	if k, _ := store.GetAPIKeyByUser(context.Background(), user.ID); k != nil {
+		t.Error("key row still present after revoke")
 	}
 }

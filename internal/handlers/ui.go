@@ -366,6 +366,27 @@ func (u *UI) lockKeys(w http.ResponseWriter, r *http.Request, userID int64) (unl
 	return unlock, true
 }
 
+// finishTimeout bounds the work a key request does after it has started to
+// change the key upstream. It is at most the shutdown grace in main.go, so a
+// request that detaches just before SIGTERM still finishes within it.
+const finishTimeout = 20 * time.Second
+
+// detach returns r with a context that is no longer cancelled when the client
+// goes away. A handler switches to it before it changes a key upstream: once
+// the gateway has acted, the local record and any rollback must follow, or a
+// disconnect leaves a live key nothing points to, or a record that no longer
+// matches the gateway.
+func detach(r *http.Request) (*http.Request, context.CancelFunc) {
+	ctx, cancel := detachCtx(r.Context())
+	return r.WithContext(ctx), cancel
+}
+
+// detachCtx is detach for a context: a copy of ctx that is not cancelled
+// with it, bounded by finishTimeout.
+func detachCtx(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), finishTimeout)
+}
+
 // GenerateKey creates a new LiteLLM key for the user, replacing any existing one.
 func (u *UI) GenerateKey(w http.ResponseWriter, r *http.Request) {
 	su, err := u.requireSession(r)
@@ -407,6 +428,9 @@ func (u *UI) GenerateKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r, cancel := detach(r)
+	defer cancel()
+
 	// Create the replacement BEFORE revoking the old one. The reverse order
 	// leaves the user with no working key whenever creation fails.
 	expiresAt := time.Now().AddDate(0, 0, u.keyDuration(profile))
@@ -441,8 +465,12 @@ func (u *UI) GenerateKey(w http.ResponseWriter, r *http.Request) {
 		SyncedOwnerEmail: &su.User.Email,
 	}); err != nil {
 		// The key exists upstream but could not be recorded, so nothing can
-		// ever revoke it through this app. Revoke it now rather than leaking it.
-		if delErr := u.keys.DeleteKey(r.Context(), result.Ref); delErr != nil {
+		// ever revoke it through this app. Revoke it now rather than leaking
+		// it, on a budget of its own: a slow create and a store write that
+		// waited on the busy timeout may have used up most of the request's.
+		rollbackCtx, cancelRollback := detachCtx(r.Context())
+		defer cancelRollback()
+		if delErr := u.keys.DeleteKey(rollbackCtx, result.Ref); delErr != nil {
 			slog.Error("roll back orphaned key", "key_prefix", prefix, "err", delErr)
 		}
 		metrics.KeyOperations.WithLabelValues("generate", "store_error").Inc()
@@ -509,6 +537,8 @@ func (u *UI) ExtendKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	newExpiry := time.Now().AddDate(0, 0, u.keyDuration(profile))
+	r, cancel := detach(r)
+	defer cancel()
 	if err := u.keys.UpdateExpiry(r.Context(), k.KeyRef, newExpiry); err != nil {
 		if errors.Is(err, keyprovider.ErrKeyNotFound) {
 			u.markMissingKey(r.Context(), su.User, k, metrics.SourceExtend)
@@ -558,6 +588,8 @@ func (u *UI) DeleteKey(w http.ResponseWriter, r *http.Request) {
 
 	// Revoke upstream first: if that fails the key is still live, so the local
 	// row must stay to keep it revocable.
+	r, cancel := detach(r)
+	defer cancel()
 	if err := u.keys.DeleteKey(r.Context(), k.KeyRef); err != nil {
 		metrics.KeyOperations.WithLabelValues("delete", "provider_error").Inc()
 		httpError(w, r, http.StatusInternalServerError, "Failed to delete your key; it is still active. Please try again.", err, "key_prefix", k.KeyPrefix)
