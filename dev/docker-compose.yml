@@ -16,7 +16,7 @@
 # logout, so it cannot exercise that path. See dev/README.md.
 services:
   # Accepts any client id and secret without registration, so no client config
-  # is needed: log in as either user in mock-users.json by entering their
+  # is needed: log in as any user in mock-users.json by entering their
   # subject.
   oidc-mock:
     image: ghcr.io/geigerzaehler/oidc-provider-mock:0.4.8
