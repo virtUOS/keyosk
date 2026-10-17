@@ -102,6 +102,10 @@ func main() {
 		slog.Warn("setting is no longer read: admin rights are recorded on the account, see https://virtuos.github.io/keyosk/administrators/",
 			"setting", name)
 	}
+	if cfg.CookieSecureSet {
+		slog.Warn("COOKIE_SECURE is no longer read: cookies are secure when FRONTEND_URL is https",
+			"frontend_url", cfg.FrontendURL, "secure", cfg.CookieSecure)
+	}
 	if cfg.AdminFromGroups() {
 		// Nobody holds the flag until a member of the group logs in, so a
 		// count would only raise a false alarm here.

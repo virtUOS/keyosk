@@ -49,9 +49,8 @@ OIDC_CLIENT_ID=keyosk
 OIDC_CLIENT_SECRET=...
 OIDC_REDIRECT_URL=https://keyosk.example.org/callback
 
-# Where people reach Keyosk; served over HTTPS, so the cookies are secure
+# Where people reach Keyosk; https makes the cookies secure
 FRONTEND_URL=https://keyosk.example.org
-COOKIE_SECURE=true
 
 # Admins: the members of this group at the identity provider
 ADMIN_GROUP=keyosk-admin

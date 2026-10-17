@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"net/netip"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -74,8 +75,14 @@ type Config struct {
 	// leaves the endpoint open to anyone who can reach it.
 	MetricsToken string
 
-	ListenAddr      string
-	CookieSecure    bool
+	ListenAddr string
+	// CookieSecure is true when FRONTEND_URL is https. Cookies are then
+	// Secure and __Host- prefixed, and responses carry HSTS.
+	CookieSecure bool
+	// CookieSecureSet reports that the environment still sets COOKIE_SECURE,
+	// which is no longer read, so startup can say so.
+	CookieSecureSet bool
+
 	SessionDuration time.Duration
 	KeyDurationDays int
 
@@ -191,11 +198,14 @@ func Load() (*Config, error) {
 		}
 	}
 
-	secure, err := strconv.ParseBool(envOr("COOKIE_SECURE", "false"))
-	if err != nil {
-		return nil, fmt.Errorf("COOKIE_SECURE must be true or false: %w", err)
+	// The cookies and HSTS depend on what the browser sees, which is
+	// FRONTEND_URL, also when a reverse proxy in front ends TLS.
+	frontend, err := url.Parse(cfg.FrontendURL)
+	if err != nil || (frontend.Scheme != "http" && frontend.Scheme != "https") || frontend.Host == "" {
+		return nil, fmt.Errorf("FRONTEND_URL must be an absolute http or https URL: %q", cfg.FrontendURL)
 	}
-	cfg.CookieSecure = secure
+	cfg.CookieSecure = frontend.Scheme == "https"
+	cfg.CookieSecureSet = os.Getenv("COOKIE_SECURE") != ""
 
 	dur, err := time.ParseDuration(envOr("SESSION_DURATION", "24h"))
 	if err != nil {
