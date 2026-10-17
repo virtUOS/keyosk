@@ -152,7 +152,7 @@ func TestDeleteProfileRefusesAssignedProfile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := s.SetUserProfile(ctx, u.ID, &p.ID); err != nil {
+		if err := s.SetUserProfileUntil(ctx, u.ID, &p.ID, nil, nil, false); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -295,7 +295,7 @@ func TestSeedPromotesProfileNamedDefault(t *testing.T) {
 	if _, err := s.CreateProfile(ctx, &Profile{Name: "lecturers"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.ExecRaw(ctx, "UPDATE profiles SET is_default = 0"); err != nil {
+	if _, err := s.db.ExecContext(ctx, "UPDATE profiles SET is_default = 0"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -310,7 +310,7 @@ func TestSeedPromotesProfileNamedDefault(t *testing.T) {
 		t.Errorf("default = %d %q, want the existing profile %d promoted", d.ID, d.Description, p.ID)
 	}
 	var n int
-	if err := s.QueryRowRaw(ctx, `SELECT COUNT(*) FROM profiles`).Scan(&n); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM profiles`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	if n != 2 {
@@ -327,7 +327,7 @@ func TestSeedRefusesWithoutCandidate(t *testing.T) {
 	if _, err := s.CreateProfile(ctx, &Profile{Name: "students", IsDefault: true}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.ExecRaw(ctx, "UPDATE profiles SET is_default = 0"); err != nil {
+	if _, err := s.db.ExecContext(ctx, "UPDATE profiles SET is_default = 0"); err != nil {
 		t.Fatal(err)
 	}
 

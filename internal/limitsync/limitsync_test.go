@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/uptrace/bun"
+
 	"github.com/virtuos/keyosk/internal/database"
 	"github.com/virtuos/keyosk/internal/keyprovider"
 	"github.com/virtuos/keyosk/internal/metrics"
@@ -124,6 +126,7 @@ func plainUser(sub, name, _ string) keyprovider.User {
 }
 
 type fixture struct {
+	db    *bun.DB
 	store *database.Store
 	ctx   context.Context
 	def   *database.Profile
@@ -152,7 +155,7 @@ func newFixture(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &fixture{store: store, ctx: ctx, def: def, gw: newGatewayStub()}
+	return &fixture{db: db, store: store, ctx: ctx, def: def, gw: newGatewayStub()}
 }
 
 // addKey creates a user with a key that has never been synced.
@@ -291,7 +294,7 @@ func TestEditDuringRunIsPickedUpBySameRun(t *testing.T) {
 func TestKeyWithoutProfileIsNeverPushedEmptyLimits(t *testing.T) {
 	f := newFixture(t)
 	ref := f.addKey(t, "a")
-	if err := f.store.ExecRaw(f.ctx, "UPDATE profiles SET is_default = 0"); err != nil {
+	if _, err := f.db.ExecContext(f.ctx, "UPDATE profiles SET is_default = 0"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -370,14 +373,7 @@ func waitFor(t *testing.T, cond func() bool) {
 func TestExpiredKeyIsNotPushed(t *testing.T) {
 	f := newFixture(t)
 	ref := f.addKey(t, "a")
-	u, err := f.store.GetUserByOIDCSub(f.ctx, "a")
-	if err != nil {
-		t.Fatal(err)
-	}
-	k, err := f.store.GetAPIKeyByUser(f.ctx, u.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	k := f.keyOf(t, "a")
 	if err := f.store.UpdateAPIKeyExpiry(f.ctx, k.ID, time.Now().Add(-time.Hour)); err != nil {
 		t.Fatal(err)
 	}
@@ -506,7 +502,7 @@ func TestFailedRelabelIsRetried(t *testing.T) {
 // test can put a key inside or past the grace period without sleeping.
 func (f *fixture) ageMissing(t *testing.T, by time.Duration) {
 	t.Helper()
-	if err := f.store.ExecRaw(f.ctx, `UPDATE api_keys SET missing_since = ? WHERE missing_since IS NOT NULL`,
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE api_keys SET missing_since = ? WHERE missing_since IS NOT NULL`,
 		time.Now().Add(-by)); err != nil {
 		t.Fatal(err)
 	}

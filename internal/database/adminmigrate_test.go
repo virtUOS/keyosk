@@ -38,7 +38,7 @@ func migrateBeforeAdminFlag(t *testing.T, s *Store) {
 func seedOldGrants(t *testing.T, s *Store) {
 	t.Helper()
 	now := time.Now()
-	if err := s.ExecRaw(context.Background(), `
+	if _, err := s.db.ExecContext(context.Background(), `
 		INSERT INTO users (id, oidc_sub, email, name, created_at, updated_at)
 		  VALUES (1,'s1','a@b.c','A',?,?), (2,'s2','b@b.c','B',?,?);
 		INSERT INTO admin_grants (oidc_sub, email, granted_by_email, created_at)
@@ -69,7 +69,7 @@ func TestMigrationCarriesSubjectLinkedGrants(t *testing.T) {
 	if len(admins) != 1 || admins[0].ID != 1 {
 		t.Errorf("admins after the upgrade = %+v, want only account 1", admins)
 	}
-	if err := s.ExecRaw(ctx, `SELECT 1 FROM admin_grants`); err == nil {
+	if _, err := s.db.ExecContext(ctx, `SELECT 1 FROM admin_grants`); err == nil {
 		t.Error("admin_grants still exists after the migration")
 	}
 }
@@ -96,7 +96,7 @@ func TestAdminFlagMigrationRollsBack(t *testing.T) {
 	if len(subs) != 1 || subs[0] != "s1" {
 		t.Errorf("grants after the rollback = %v, want the flagged account's subject", subs)
 	}
-	if err := s.ExecRaw(ctx, `SELECT is_admin FROM users`); err == nil {
+	if _, err := s.db.ExecContext(ctx, `SELECT is_admin FROM users`); err == nil {
 		t.Error("users.is_admin still exists after the rollback")
 	}
 }

@@ -43,7 +43,7 @@ func TestDashboardNeverPushesLimits(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SetUserProfile(ctx, user.ID, &p.ID); err != nil {
+	if err := store.SetUserProfileUntil(ctx, user.ID, &p.ID, nil, nil, false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -60,14 +60,14 @@ func TestDashboardNeverPushesLimits(t *testing.T) {
 // date and the model list would otherwise show server-wide defaults as if
 // they were this user's.
 func TestDashboardReportsAProfileItCannotLoad(t *testing.T) {
-	ui, fake, store, _ := newTestUI(t, "psync-noprofile")
+	ui, fake, _, _ := newTestUI(t, "psync-noprofile")
 	ctx := context.Background()
 	post(t, ui, ui.GenerateKey, "/key/generate")
 	fake.AvailableModels = []string{"every-model-on-the-gateway"}
 
 	// The user has no profile of their own, so without a default the lookup
 	// fails.
-	if err := store.ExecRaw(ctx, "UPDATE profiles SET is_default = 0"); err != nil {
+	if _, err := rawDB(t, "psync-noprofile").ExecContext(ctx, "UPDATE profiles SET is_default = 0"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -96,11 +96,11 @@ func TestDashboardReportsAProfileItCannotLoad(t *testing.T) {
 // A key that cannot be loaded must not read as "you have no key", and must not
 // invite the user to generate one.
 func TestDashboardReportsAKeyItCannotLoad(t *testing.T) {
-	ui, _, store, _ := newTestUI(t, "psync-nokey")
+	ui, _, _, _ := newTestUI(t, "psync-nokey")
 	ctx := context.Background()
 	post(t, ui, ui.GenerateKey, "/key/generate")
 
-	if err := store.ExecRaw(ctx, "ALTER TABLE api_keys RENAME TO api_keys_gone"); err != nil {
+	if _, err := rawDB(t, "psync-nokey").ExecContext(ctx, "ALTER TABLE api_keys RENAME TO api_keys_gone"); err != nil {
 		t.Fatal(err)
 	}
 

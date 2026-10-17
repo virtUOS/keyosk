@@ -149,9 +149,9 @@ func TestRunLeavesThePushToTheLimitSync(t *testing.T) {
 	if _, err := store.CreateProfile(ctx, to, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.CreateAPIKey(ctx, &database.APIKey{
+	if err := store.ReplaceAPIKey(ctx, &database.APIKey{
 		UserID: u.ID, KeyRef: "sk-live", KeyPrefix: "sk-li",
-		ExpiresAt: time.Now().Add(90 * 24 * time.Hour), CreatedAt: time.Now(),
+		ExpiresAt: time.Now().Add(90 * 24 * time.Hour),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -196,9 +196,9 @@ func TestRunRevokesTheKeyWhenAsked(t *testing.T) {
 	if _, err := store.CreateProfile(ctx, p, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.CreateAPIKey(ctx, &database.APIKey{
+	if err := store.ReplaceAPIKey(ctx, &database.APIKey{
 		UserID: u.ID, KeyRef: "sk-doomed", KeyPrefix: "sk-do",
-		ExpiresAt: time.Now().Add(90 * 24 * time.Hour), CreatedAt: time.Now(),
+		ExpiresAt: time.Now().Add(90 * 24 * time.Hour),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -285,9 +285,9 @@ func TestRunKeepsTheDeadlineWhenTheGatewayFails(t *testing.T) {
 	if _, err := store.CreateProfile(ctx, p, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.CreateAPIKey(ctx, &database.APIKey{
+	if err := store.ReplaceAPIKey(ctx, &database.APIKey{
 		UserID: u.ID, KeyRef: "sk-fail", KeyPrefix: "sk-fa",
-		ExpiresAt: time.Now().Add(90 * 24 * time.Hour), CreatedAt: time.Now(),
+		ExpiresAt: time.Now().Add(90 * 24 * time.Hour),
 	}); err != nil {
 		t.Fatal(err)
 	}

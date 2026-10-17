@@ -71,7 +71,7 @@ func TestMarkKeyMissing(t *testing.T) {
 func TestMarkedKeyIsNotPending(t *testing.T) {
 	f := newLimitSyncFixture(t, "km-pending")
 	other := f.createProfile(t, "other", 5)
-	if err := f.s.SetUserProfile(f.ctx, f.user.ID, &other.ID); err != nil {
+	if err := f.s.SetUserProfileUntil(f.ctx, f.user.ID, &other.ID, nil, nil, false); err != nil {
 		t.Fatal(err)
 	}
 	if got := f.pending(t); len(got) != 1 {

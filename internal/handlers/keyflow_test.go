@@ -28,7 +28,7 @@ import (
 // plus a logged-in user and the cookies needed to satisfy CSRF.
 func newTestUI(t *testing.T, name string) (*UI, *keyprovider.Fake, *database.Store, *database.User) {
 	t.Helper()
-	sqldb, err := sql.Open(sqliteshim.ShimName, "file:"+name+"?mode=memory&cache=shared")
+	sqldb, err := sql.Open(sqliteshim.ShimName, memoryDSN(name))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,6 +63,24 @@ func newTestUI(t *testing.T, name string) (*UI, *keyprovider.Fake, *database.Sto
 	ui := NewUI(&config.Config{KeyDurationDays: 90, FrontendURL: "http://x"},
 		store, sessions, nil, fake, csrf, nil)
 	return ui, fake, store, user
+}
+
+func memoryDSN(name string) string {
+	return "file:" + name + "?mode=memory&cache=shared"
+}
+
+// rawDB opens a second handle on the in-memory database of newTestUI(t, name),
+// for tests that need SQL the store does not offer: to break a table, or to
+// look at what a row holds. The shared cache makes both handles see the same
+// database while newTestUI's stays open.
+func rawDB(t *testing.T, name string) *sql.DB {
+	t.Helper()
+	db, err := sql.Open(sqliteshim.ShimName, memoryDSN(name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	return db
 }
 
 // post issues an authenticated, CSRF-valid POST to h.
@@ -113,7 +131,7 @@ func TestGenerateKeyStoresAndIssues(t *testing.T) {
 		t.Errorf("stored ref %q is not the provider's ref", k.KeyRef)
 	}
 	var leaked int
-	if err := store.QueryRowRaw(context.Background(),
+	if err := rawDB(t, "kf1").QueryRowContext(context.Background(),
 		`SELECT COUNT(*) FROM api_keys WHERE key_ref LIKE '%' || ? || '%'`, secret).Scan(&leaked); err != nil {
 		t.Fatal(err)
 	}
@@ -130,12 +148,12 @@ func TestGenerateKeyStoresAndIssues(t *testing.T) {
 // If the key cannot be stored, it must be revoked upstream rather than left
 // live with no local record of it — an unrevokable orphan.
 func TestGenerateKeyRevokesOrphanWhenStoreFails(t *testing.T) {
-	ui, fake, store, _ := newTestUI(t, "kf2")
+	ui, fake, _, _ := newTestUI(t, "kf2")
 	ctx := context.Background()
 
 	// Reject any insert into api_keys so the handler's write fails after the
 	// provider has already issued the key.
-	if err := store.ExecRaw(ctx, `CREATE TRIGGER block_insert BEFORE INSERT ON api_keys
+	if _, err := rawDB(t, "kf2").ExecContext(ctx, `CREATE TRIGGER block_insert BEFORE INSERT ON api_keys
 		BEGIN SELECT RAISE(ABORT, 'blocked'); END`); err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +289,7 @@ func TestExtendKeyUsesProfileDuration(t *testing.T) {
 	if _, err := store.CreateProfile(ctx, p, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SetUserProfile(ctx, user.ID, &p.ID); err != nil {
+	if err := store.SetUserProfileUntil(ctx, user.ID, &p.ID, nil, nil, false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -372,11 +390,11 @@ func TestDeleteKeyKeepsRowWhenUpstreamFails(t *testing.T) {
 // If the row cannot be removed after the upstream delete, the user must hear
 // about it rather than be sent back to a dashboard that still shows the key.
 func TestDeleteKeyReportsStoreFailure(t *testing.T) {
-	ui, fake, store, _ := newTestUI(t, "kf6c")
+	ui, fake, _, _ := newTestUI(t, "kf6c")
 	ctx := context.Background()
 	post(t, ui, ui.GenerateKey, "/key/generate")
 
-	if err := store.ExecRaw(ctx, `CREATE TRIGGER block_delete BEFORE DELETE ON api_keys
+	if _, err := rawDB(t, "kf6c").ExecContext(ctx, `CREATE TRIGGER block_delete BEFORE DELETE ON api_keys
 		BEGIN SELECT RAISE(ABORT, 'blocked'); END`); err != nil {
 		t.Fatal(err)
 	}
@@ -401,7 +419,7 @@ func TestGenerateKeyPassesQuotaToProvider(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SetUserProfile(ctx, user.ID, &p.ID); err != nil {
+	if err := store.SetUserProfileUntil(ctx, user.ID, &p.ID, nil, nil, false); err != nil {
 		t.Fatal(err)
 	}
 

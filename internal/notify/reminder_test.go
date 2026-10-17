@@ -48,7 +48,9 @@ func (r *recorder) count() int {
 	return len(r.sent)
 }
 
-func setup(t *testing.T, name string) *database.Store {
+// setup opens an in-memory database and returns the store and the handle it
+// wraps, for the raw updates the store's API does not offer.
+func setup(t *testing.T, name string) (*database.Store, *bun.DB) {
 	t.Helper()
 	sqldb, err := sql.Open(sqliteshim.ShimName, "file:"+name+"?mode=memory&cache=shared")
 	if err != nil {
@@ -60,7 +62,7 @@ func setup(t *testing.T, name string) *database.Store {
 	if err := s.RunMigrations(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	return s
+	return s, db
 }
 
 // addKey creates a user with a 30-day key expiring in the given number of
@@ -79,16 +81,20 @@ func addKey(t *testing.T, s *database.Store, sub, email string, inDays int) *dat
 	if err := s.ReplaceAPIKey(ctx, k); err != nil {
 		t.Fatal(err)
 	}
-	setRemaining(t, s, k.ID, time.Duration(inDays)*24*time.Hour, 30)
+	// Set as of inDays before its expiry, so that a 30-day validity has run
+	// down to inDays left.
+	if err := s.SetAPIKeyExpiry(ctx, k.ID, k.ExpiresAt.AddDate(0, 0, -30), k.ExpiresAt); err != nil {
+		t.Fatal(err)
+	}
 	return k
 }
 
 // setRemaining moves a key to the point in its life where left remains of a
 // validity of validDays, as if time had passed since its expiry was set.
-func setRemaining(t *testing.T, s *database.Store, keyID int64, left time.Duration, validDays int) {
+func setRemaining(t *testing.T, db *bun.DB, keyID int64, left time.Duration, validDays int) {
 	t.Helper()
 	expires := time.Now().Add(left)
-	if err := s.ExecRaw(context.Background(),
+	if _, err := db.ExecContext(context.Background(),
 		`UPDATE api_keys SET expires_at = ?, expiry_set_at = ? WHERE id = ?`,
 		expires, expires.AddDate(0, 0, -validDays), keyID); err != nil {
 		t.Fatal(err)
@@ -115,7 +121,7 @@ func pending(t *testing.T, s *database.Store, keyID int64) []int {
 }
 
 func TestReminderWarnsKeysInsideWindow(t *testing.T) {
-	s := setup(t, "rem1")
+	s, _ := setup(t, "rem1")
 	addKey(t, s, "soon", "soon@uni.de", 2)    // inside 3d and 14d
 	addKey(t, s, "later", "later@uni.de", 40) // outside every window
 
@@ -140,7 +146,7 @@ func TestReminderWarnsKeysInsideWindow(t *testing.T) {
 
 // The whole point of the notices table: repeated runs must not re-mail.
 func TestReminderDoesNotRepeat(t *testing.T) {
-	s := setup(t, "rem2")
+	s, _ := setup(t, "rem2")
 	addKey(t, s, "u1", "u1@uni.de", 2)
 
 	rec := &recorder{}
@@ -164,7 +170,7 @@ func TestReminderDoesNotRepeat(t *testing.T) {
 // Extending a key moves its expiry date, so the warnings for the old date must
 // not suppress the warnings for the new one.
 func TestReminderWarnsAgainAfterExtension(t *testing.T) {
-	s := setup(t, "rem7")
+	s, db := setup(t, "rem7")
 	k := addKey(t, s, "u1", "u1@uni.de", 2)
 
 	rec := &recorder{}
@@ -185,7 +191,7 @@ func TestReminderWarnsAgainAfterExtension(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The new period runs down to 2 days left.
-	setRemaining(t, s, k.ID, 2*24*time.Hour, 30)
+	setRemaining(t, db, k.ID, 2*24*time.Hour, 30)
 	if err := r.Run(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +203,7 @@ func TestReminderWarnsAgainAfterExtension(t *testing.T) {
 // Someone who has just extended a key has seen the new date and needs no
 // notice about it, although the key is inside the 14-day window.
 func TestReminderSkipsNoticeRightAfterExtension(t *testing.T) {
-	s := setup(t, "rem8")
+	s, _ := setup(t, "rem8")
 	k := addKey(t, s, "u1", "u1@uni.de", 2)
 	ctx := context.Background()
 	if err := s.UpdateAPIKeyExpiry(ctx, k.ID, time.Now().AddDate(0, 0, 14)); err != nil {
@@ -224,7 +230,7 @@ func TestReminderSendsThresholdsTheValidityAllows(t *testing.T) {
 		{30, []string{"in 14 days", "in 3 days", "tomorrow"}},
 	} {
 		t.Run(fmt.Sprintf("%dd", tc.valid), func(t *testing.T) {
-			s := setup(t, fmt.Sprintf("rem9-%d", tc.valid))
+			s, db := setup(t, fmt.Sprintf("rem9-%d", tc.valid))
 			k := addKey(t, s, "u1", "u1@uni.de", tc.valid)
 			rec := &recorder{}
 			r := NewReminder(s, rec, "https://portal", nil)
@@ -234,7 +240,7 @@ func TestReminderSendsThresholdsTheValidityAllows(t *testing.T) {
 				time.Duration(tc.valid) * 24 * time.Hour,
 				13 * 24 * time.Hour, 2 * 24 * time.Hour, 12 * time.Hour,
 			} {
-				setRemaining(t, s, k.ID, left, tc.valid)
+				setRemaining(t, db, k.ID, left, tc.valid)
 				if err := r.Run(context.Background()); err != nil {
 					t.Fatal(err)
 				}
@@ -258,9 +264,9 @@ func TestReminderSendsThresholdsTheValidityAllows(t *testing.T) {
 // A key inside several windows at once, for instance after downtime, gets
 // only the most urgent notice, and the wider ones are not sent later.
 func TestReminderSendsOnlyTheNarrowestDueNotice(t *testing.T) {
-	s := setup(t, "rem10")
+	s, db := setup(t, "rem10")
 	k := addKey(t, s, "u1", "u1@uni.de", 30)
-	setRemaining(t, s, k.ID, 12*time.Hour, 30)
+	setRemaining(t, db, k.ID, 12*time.Hour, 30)
 
 	rec := &recorder{}
 	r := NewReminder(s, rec, "https://portal", nil)
@@ -284,9 +290,9 @@ func TestReminderSendsOnlyTheNarrowestDueNotice(t *testing.T) {
 // When the most urgent notice fails, the wider ones must not go out instead,
 // and nothing is recorded, so the next run retries the urgent one.
 func TestReminderRetriesTheNarrowestNoticeAfterFailure(t *testing.T) {
-	s := setup(t, "rem11")
+	s, db := setup(t, "rem11")
 	k := addKey(t, s, "u1", "u1@uni.de", 30)
-	setRemaining(t, s, k.ID, 12*time.Hour, 30)
+	setRemaining(t, db, k.ID, 12*time.Hour, 30)
 
 	rec := &recorder{err: errors.New("relay down")}
 	r := NewReminder(s, rec, "https://portal", nil)
@@ -309,7 +315,7 @@ func TestReminderRetriesTheNarrowestNoticeAfterFailure(t *testing.T) {
 
 // Already-expired keys are not worth a warning.
 func TestReminderSkipsExpiredKeys(t *testing.T) {
-	s := setup(t, "rem3")
+	s, _ := setup(t, "rem3")
 	addKey(t, s, "gone", "gone@uni.de", -5)
 
 	rec := &recorder{}
@@ -323,7 +329,7 @@ func TestReminderSkipsExpiredKeys(t *testing.T) {
 
 // A delivery failure must not record the notice, so the next run retries.
 func TestReminderRetriesAfterFailure(t *testing.T) {
-	s := setup(t, "rem4")
+	s, _ := setup(t, "rem4")
 	addKey(t, s, "u1", "u1@uni.de", 2)
 
 	rec := &recorder{err: errors.New("relay down")}
@@ -350,7 +356,7 @@ func TestReminderRetriesAfterFailure(t *testing.T) {
 // A recipient the relay refuses permanently is recorded, so later runs do not
 // try it again until the key expires.
 func TestReminderDoesNotRetryARejectedRecipient(t *testing.T) {
-	s := setup(t, "rem-rejected")
+	s, _ := setup(t, "rem-rejected")
 	addKey(t, s, "u1", "u1@uni.de", 2)
 
 	rec := &recorder{err: fmt.Errorf("send mail to u1@uni.de: %w: 550 user unknown", ErrRejected)}
@@ -372,7 +378,7 @@ func TestReminderDoesNotRetryARejectedRecipient(t *testing.T) {
 }
 
 func TestReminderMessageWording(t *testing.T) {
-	s := setup(t, "rem5")
+	s, _ := setup(t, "rem5")
 	addKey(t, s, "u1", "u1@uni.de", 1)
 
 	rec := &recorder{}
@@ -402,7 +408,7 @@ func TestDiscardNotifier(t *testing.T) {
 // There is no per-user language on record, so the mail carries both, German
 // first to match the UI default. See issue #6.
 func TestReminderMessageIsBilingual(t *testing.T) {
-	s := setup(t, "rem6")
+	s, _ := setup(t, "rem6")
 	addKey(t, s, "u1", "u1@uni.de", 1)
 
 	rec := &recorder{}
@@ -434,9 +440,9 @@ func TestReminderMessageIsBilingual(t *testing.T) {
 // run, no wider notice goes out in its place; the next run sends the urgent
 // one.
 func TestReminderSendsNoWiderNoticeInPlaceOfAFailedOne(t *testing.T) {
-	s := setup(t, "rem12")
+	s, db := setup(t, "rem12")
 	k := addKey(t, s, "u1", "u1@uni.de", 30)
-	setRemaining(t, s, k.ID, 12*time.Hour, 30)
+	setRemaining(t, db, k.ID, 12*time.Hour, 30)
 
 	rec := &recorder{fail: 1}
 	r := NewReminder(s, rec, "https://portal", nil)
