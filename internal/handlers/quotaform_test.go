@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -64,8 +65,14 @@ func TestParseQuotaWindowsRejectsDuplicatePeriod(t *testing.T) {
 		"quota_budget": {"0.10", "0.20"},
 		"quota_period": {"24h", "24h"},
 	}
-	if _, err := parseQuotaWindows(form); err == nil {
-		t.Error("expected an error for a duplicated period")
+	_, err := parseQuotaWindows(form)
+	if err == nil {
+		t.Fatal("expected an error for a duplicated period")
+	}
+	// The error is the flash the admin reads, so it names the period the way
+	// the form does rather than as the stored "24h".
+	if want := "the daily window is set twice"; err.Error() != want {
+		t.Errorf("error = %q, want %q", err, want)
 	}
 }
 
@@ -85,8 +92,12 @@ func TestParseQuotaWindowsRejectsUnreachableWindow(t *testing.T) {
 		"quota_budget": {"5", "1"},
 		"quota_period": {"1h", "30d"},
 	}
-	if _, err := parseQuotaWindows(form); err == nil {
-		t.Error("expected an error: an hourly cap above the monthly one can never bind")
+	_, err := parseQuotaWindows(form)
+	if err == nil {
+		t.Fatal("expected an error: an hourly cap above the monthly one can never bind")
+	}
+	if want := "the hourly allowance (5) is larger than the monthly one (1)"; err.Error() != want {
+		t.Errorf("error = %q, want %q", err, want)
 	}
 }
 
@@ -163,5 +174,24 @@ func TestParseQuotaWindowsAcceptsCommaDecimal(t *testing.T) {
 	}
 	if got[0].Budget != 0.25 {
 		t.Errorf("budget = %v, want 0.25", got[0].Budget)
+	}
+}
+
+// The error ends up in the redirect URL, so it must not repeat what was
+// posted: a crafted amount would make the Location header as long as the
+// body. The number input keeps a person from ever reaching this message.
+func TestParseQuotaWindowsErrorDoesNotEchoInput(t *testing.T) {
+	junk := strings.Repeat("x", 1000)
+	for _, form := range []url.Values{
+		{"quota_budget": {junk}, "quota_period": {"24h"}},
+		{"quota_budget": {"1"}, "quota_period": {junk}},
+	} {
+		_, err := parseQuotaWindows(form)
+		if err == nil {
+			t.Fatalf("expected an error for %v", form)
+		}
+		if strings.Contains(err.Error(), junk) {
+			t.Errorf("error repeats the posted value: %.60s...", err)
+		}
 	}
 }

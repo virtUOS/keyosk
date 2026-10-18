@@ -109,6 +109,11 @@ var messages = map[string]map[Lang]string{
 	"admin.form.quota.add":    {DE: "Fenster hinzufügen", EN: "Add window"},
 	"admin.form.quota.amount": {DE: "Betrag", EN: "Amount"},
 	"admin.form.quota.unit":   {DE: "Einheit:", EN: "Unit:"},
+
+	// What the profile form says about a quota window before it posts.
+	"admin.form.quota.duplicate": {DE: "Dieser Zeitraum ist schon in einem anderen Fenster gesetzt.", EN: "This period is already set in another window."},
+	"admin.form.quota.exceeds":   {DE: "Erlaubt mehr als das Fenster „{period}“ und würde daher nie greifen.", EN: "Allows more than the {period} window, so it would never take effect."},
+
 	"period.hour":             {DE: "pro Stunde", EN: "per hour"},
 	"period.day":              {DE: "pro Tag", EN: "per day"},
 	"period.week":             {DE: "pro Woche", EN: "per week"},

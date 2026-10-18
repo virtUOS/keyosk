@@ -220,3 +220,37 @@ func TestAuditFilter(t *testing.T) {
 	check(t, box.Fill(""))
 	check(t, expect.Locator(visible).ToHaveCount(all))
 }
+
+// A duplicated period is reported as such, and the duplicate stays out of
+// the length comparison: with 1h:5, 24h:10 and 24h:1, the hourly window is
+// measured against the daily 10, not the duplicate's 1.
+func TestProfileQuotaCheck(t *testing.T) {
+	t.Parallel()
+	page := loggedIn(t, "admin", adminView)
+	goTo(t, page, "/admin")
+	click(t, page.Locator("button[onclick='openNewProfile()']"))
+
+	add := page.Locator("#profile-dialog").GetByRole("button", playwright.LocatorGetByRoleOptions{Name: "Add window"})
+	rows := page.Locator("#pf-quotas .quota-row")
+	for i, w := range []struct{ amount, period string }{{"5", "1h"}, {"10", "24h"}, {"1", "24h"}} {
+		click(t, add)
+		check(t, rows.Nth(i).Locator("input").Fill(w.amount))
+		_, err := rows.Nth(i).Locator("select").SelectOption(playwright.SelectOptionValues{Values: &[]string{w.period}})
+		check(t, err)
+	}
+	check(t, expect.Locator(page.Locator("#pf-quota-error")).ToContainText("already set in another window"))
+	messages, err := rows.Locator("input").EvaluateAll("els => els.map(e => e.validationMessage)")
+	check(t, err)
+	if fmt.Sprint(messages) != "[  ]" {
+		t.Errorf("amount messages = %q, want none: a duplicate is not a window to measure against", messages)
+	}
+
+	// Once the duplicate is gone, the hourly 5 is compared with the daily 10
+	// and passes, and the dialog has nothing to report.
+	click(t, rows.Nth(2).GetByRole("button", playwright.LocatorGetByRoleOptions{Name: "Delete"}))
+	check(t, expect.Locator(page.Locator("#pf-quota-error")).ToBeHidden())
+
+	// The reverse, a daily 1 under the hourly 5, is caught and named.
+	check(t, rows.Nth(1).Locator("input").Fill("1"))
+	check(t, expect.Locator(page.Locator("#pf-quota-error")).ToContainText("Allows more than the daily window"))
+}
