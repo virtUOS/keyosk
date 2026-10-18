@@ -49,3 +49,9 @@ Register the application with your OIDC provider:
 - **Back-channel logout URI**: `{FRONTEND_URL}/backchannel-logout` (optional)
 - Required scopes: `openid`, `email`, `profile`, plus whatever your IdP needs
   to send groups when `ADMIN_GROUP` is set (see `OIDC_EXTRA_SCOPES`)
+
+Only the identity provider calls `/backchannel-logout`, and it needs no login.
+Keyosk acts only on a logout token signed by the provider, but each request
+with a token it cannot verify makes it fetch the provider's signing keys
+again. If your reverse proxy can, allow `/backchannel-logout` only from the
+identity provider's addresses.
