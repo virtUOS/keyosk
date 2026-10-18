@@ -466,23 +466,34 @@ func (s *Store) DeleteProfile(ctx context.Context, id int64) error {
 
 // --- Users ---
 
+// GetOrCreateUser records a login: it creates the account on the first one
+// and takes the name and email from the IdP on every later one.
+//
+// It updates first and inserts only when no account matched. A plain upsert
+// would do in one statement, but SQLite's AUTOINCREMENT uses up an id on
+// every insert that ends in the conflict, which would be every login. The
+// insert still resolves the conflict itself, because two first logins for
+// the same subject, such as from two tabs, can both find no account.
+//
+// Both statements return the model's columns, not *: bun fails on a column
+// the struct lacks, so after a rollback to a release older than the schema,
+// RETURNING * would break every login.
 func (s *Store) GetOrCreateUser(ctx context.Context, sub, email, name string) (*User, error) {
+	now := time.Now()
 	user := &User{}
-	err := s.db.NewSelect().Model(user).Where("oidc_sub = ?", sub).Scan(ctx)
+	err := s.db.NewUpdate().Model(user).
+		Set("email = ?", email).
+		Set("name = ?", name).
+		Set("updated_at = ?", now).
+		Where("oidc_sub = ?", sub).
+		Returning("?Columns").Scan(ctx)
 	if err == nil {
-		// Update name/email in case they changed
-		user.Email = email
-		user.Name = name
-		user.UpdatedAt = time.Now()
-		_, _ = s.db.NewUpdate().Model(user).
-			Set("email = ?", email).
-			Set("name = ?", name).
-			Set("updated_at = ?", user.UpdatedAt).
-			Where("id = ?", user.ID).Exec(ctx)
 		return user, nil
 	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("update user: %w", err)
+	}
 
-	now := time.Now()
 	user = &User{
 		OIDCSub:   sub,
 		Email:     email,
@@ -490,7 +501,12 @@ func (s *Store) GetOrCreateUser(ctx context.Context, sub, email, name string) (*
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
-	_, err = s.db.NewInsert().Model(user).Exec(ctx)
+	_, err = s.db.NewInsert().Model(user).
+		On("CONFLICT (oidc_sub) DO UPDATE").
+		Set("email = EXCLUDED.email").
+		Set("name = EXCLUDED.name").
+		Set("updated_at = EXCLUDED.updated_at").
+		Returning("?Columns").Exec(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("create user: %w", err)
 	}
