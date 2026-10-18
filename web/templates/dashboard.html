@@ -55,7 +55,7 @@
       {{if .Quotas}}
       <dt>{{T .Lang "dash.usagelimit"}} <button type="button" class="help" data-help="{{T .Lang "dash.usagelimit.help"}}">?</button></dt>
       <dd>
-        {{range $i, $q := .Quotas}}{{if $i}}<br>{{end}}{{$q.Budget}} {{$q.Period}}{{end}}
+        {{range $i, $q := .Quotas}}{{if $i}}<br>{{end}}{{$q.Budget}} {{$q.Period}}{{if $q.PerKey}} <span class="text-muted">({{T $.Lang "dash.quota.perkey"}})</span>{{end}}{{end}}
       </dd>
       {{end}}
     </dl>
@@ -160,7 +160,7 @@
     <div class="alert alert-warning" style="margin-bottom:1rem">{{T .Lang "dash.error.usage"}}</div>
     {{end}}
     <p class="text-muted" style="margin-bottom:1rem;font-size:.85rem">
-      {{T .Lang "dash.usagestats.note"}}
+      {{T .Lang "dash.usagestats.note"}}{{if .Usage.AnyPerKey}} {{T .Lang "dash.usagestats.perkey"}}{{end}}
     </p>
     {{if .Usage.Windows}}
       {{/* One bar per allowance: the tightest window binds, so a single bar
@@ -168,7 +168,7 @@
       {{range .Usage.Windows}}
         <p style="margin-bottom:.35rem">
           <strong>{{fmtPct .Used .Pct}}</strong> {{T $.Lang "dash.quota.used"}}
-          <span class="text-muted">· {{.Label}}</span>
+          <span class="text-muted">· {{.Label}}{{if .PerKey}} ({{T $.Lang "dash.quota.perkey"}}){{end}}</span>
         </p>
         <div class="quota-bar" role="img"
              aria-label="{{fmtPct .Used .Pct}} {{T $.Lang "dash.quota.used"}}">

@@ -81,6 +81,9 @@ func (p *Provider) Windows(ctx context.Context, ref, ownerID string) ([]keyprovi
 	if err != nil {
 		return nil, err
 	}
+	// Everything read so far is the key's own; the owner's window, appended
+	// next, is the only one the person holds across their keys.
+	keyCount := len(windows)
 
 	// The owner's allowance is a window too, and the widest one at that.
 	if ownerID != "" {
@@ -94,7 +97,7 @@ func (p *Provider) Windows(ctx context.Context, ref, ownerID string) ([]keyprovi
 	}
 
 	out := make([]keyprovider.WindowUsage, 0, len(windows))
-	for _, w := range windows {
+	for i, w := range windows {
 		if w.MaxBudget <= 0 || w.BudgetDuration == "" {
 			continue
 		}
@@ -102,6 +105,7 @@ func (p *Provider) Windows(ctx context.Context, ref, ownerID string) ([]keyprovi
 			Period: w.BudgetDuration,
 			Limit:  w.MaxBudget,
 			Used:   w.Spend,
+			PerKey: i < keyCount,
 		}
 		if w.ResetAt != nil {
 			if t, err := time.Parse(time.RFC3339, *w.ResetAt); err == nil {

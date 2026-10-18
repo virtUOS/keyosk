@@ -783,7 +783,7 @@ func TestDashboardDrawsABarPerWindow(t *testing.T) {
 		BudgetUnit: "$",
 		Usage: usageReport{
 			Windows: []quotaWindowView{
-				{Period: "1h", Label: "per hour", Used: 0.00095, Limit: 0.001, Pct: 95},
+				{Period: "1h", Label: "per hour", Used: 0.00095, Limit: 0.001, Pct: 95, PerKey: true},
 				{Period: "30d", Label: "per month", Used: 0.00959, Limit: 1, Pct: 1},
 				// Touched, but a hundredth of a percent: must not read as 0%.
 				{Period: "7d", Label: "per week", Used: 0.0000483, Limit: 5, Pct: 0},
@@ -801,6 +801,9 @@ func TestDashboardDrawsABarPerWindow(t *testing.T) {
 	// The nearly-spent window is marked as full so it reads as urgent.
 	if !strings.Contains(out, "quota-full") {
 		t.Error("the 95% window is not marked as nearly exhausted")
+	}
+	if got := strings.Count(out, "(per key)"); got != 1 {
+		t.Errorf("marked %d windows per key, want only the hourly one", got)
 	}
 	for _, want := range []string{"per hour", "per month", "width:95%", "width:1%", "95%", "$0.0010", "$1.00", "<1%", "<$0.0001"} {
 		if !strings.Contains(out, want) {

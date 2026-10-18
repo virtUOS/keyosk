@@ -41,6 +41,93 @@ func TestUserUsageReportsEveryWindow(t *testing.T) {
 	}
 }
 
+// Only the widest window is held against the person. The shorter ones live on
+// the key and start over with a new one, so the card must not present them as
+// the person's allowance.
+func TestUserUsageMarksShorterWindowsPerKey(t *testing.T) {
+	fake := keyprovider.NewFake()
+	fake.WindowsByRef = map[string][]keyprovider.WindowUsage{
+		"sk-live": {
+			{Period: "1h", Used: 0.1, Limit: 1.0},
+			{Period: "24h", Used: 0.1, Limit: 2.0},
+		},
+	}
+	fake.WindowsByOwner = map[string][]keyprovider.WindowUsage{
+		"sub-1": {{Period: "30d", Used: 0.1, Limit: 5.0}},
+	}
+
+	got := windowsUI(fake).userUsage(context.Background(),
+		&database.APIKey{KeyRef: "sk-live"}, "sub-1", i18n.EN)
+
+	want := map[string]bool{"1h": true, "24h": true, "30d": false}
+	if len(got.Windows) != len(want) {
+		t.Fatalf("got %d windows, want %d", len(got.Windows), len(want))
+	}
+	for _, w := range got.Windows {
+		if w.PerKey != want[w.Period] {
+			t.Errorf("%s window PerKey = %v, want %v", w.Period, w.PerKey, want[w.Period])
+		}
+	}
+	if !got.AnyPerKey() {
+		t.Error("the card does not know it shows a per-key window")
+	}
+}
+
+// The card takes where a window lives from the provider rather than guessing
+// from the periods. A key from before owners were tracked holds every window
+// itself, and its widest must not be presented as the person's allowance:
+// it is as gone after a rotation as the others.
+func TestUserUsageDoesNotPromoteAKeyWindowToThePerson(t *testing.T) {
+	fake := keyprovider.NewFake()
+	fake.WindowsByRef = map[string][]keyprovider.WindowUsage{
+		"sk-old": {
+			{Period: "1h", Used: 0.1, Limit: 1.0},
+			{Period: "30d", Used: 0.1, Limit: 5.0},
+		},
+	}
+
+	got := windowsUI(fake).userUsage(context.Background(),
+		&database.APIKey{KeyRef: "sk-old"}, "sub-1", i18n.EN)
+
+	if len(got.Windows) != 2 {
+		t.Fatalf("got %d windows, want 2", len(got.Windows))
+	}
+	for _, w := range got.Windows {
+		if !w.PerKey {
+			t.Errorf("%s window is shown as the person's, but lives on the key", w.Period)
+		}
+	}
+}
+
+// A single window is the person's, whatever its period.
+func TestPerKeyWindowsSingleWindowIsThePersons(t *testing.T) {
+	windows := []keyprovider.QuotaWindow{{Budget: 1, Period: "1h"}}
+	if perKeyWindows(windows)["1h"] {
+		t.Error("a profile's only window is marked per key")
+	}
+}
+
+// The profile card's marker follows the provider's own split, so it cannot
+// label a window as the person's that the provider puts on the key.
+func TestPerKeyWindowsFollowsTheProviderSplit(t *testing.T) {
+	windows := []keyprovider.QuotaWindow{
+		{Budget: 1, Period: "7d"},
+		{Budget: 0.1, Period: "1h"},
+		{Budget: 2, Period: "30d"},
+		{Budget: 0, Period: "24h"}, // no allowance, not a window
+	}
+	got := perKeyWindows(windows)
+	want := map[string]bool{"7d": true, "1h": true}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for p, v := range want {
+		if got[p] != v {
+			t.Errorf("%s = %v, want %v", p, got[p], v)
+		}
+	}
+}
+
 // A gateway that cannot report windows must not break the card, and the card
 // must say so rather than read as "no limit".
 func TestUserUsageSurvivesWindowError(t *testing.T) {

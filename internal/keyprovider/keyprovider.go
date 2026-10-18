@@ -112,6 +112,10 @@ type WindowUsage struct {
 	Limit float64
 	// ResetsAt is when this window rolls over.
 	ResetsAt time.Time
+	// PerKey reports that the window is enforced on this key alone: every
+	// key counts it separately, and a regenerated key starts it over. The
+	// person's own allowance, held across all their keys, has it false.
+	PerKey bool
 }
 
 // DailyUsage is one day's token consumption for a person.

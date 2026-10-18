@@ -14,6 +14,7 @@ import (
 	"github.com/virtuos/keyosk/internal/database"
 	"github.com/virtuos/keyosk/internal/i18n"
 	"github.com/virtuos/keyosk/internal/keyprovider"
+	"github.com/virtuos/keyosk/internal/litellm"
 	"github.com/virtuos/keyosk/internal/metrics"
 	"github.com/virtuos/keyosk/internal/notify"
 	oidcpkg "github.com/virtuos/keyosk/internal/oidc"
@@ -610,6 +611,7 @@ func profileName(p *database.Profile) string {
 type quotaLine struct {
 	Budget string // pre-formatted, with the deployment's unit
 	Period string
+	PerKey bool // see perKeyWindows
 }
 
 // profileQuotaLines renders a profile's allowance windows. Empty when the
@@ -621,6 +623,8 @@ func profileQuotaLines(p *database.Profile, lang i18n.Lang, unit string) []quota
 	if p == nil {
 		return nil
 	}
+	perKey := perKeyWindows(p.Limits().Quotas)
+
 	out := make([]quotaLine, 0, len(p.Quotas))
 	for _, q := range p.Quotas {
 		if q.Budget <= 0 || q.Period == "" {
@@ -629,7 +633,40 @@ func profileQuotaLines(p *database.Profile, lang i18n.Lang, unit string) []quota
 		out = append(out, quotaLine{
 			Budget: FormatBudget(q.Budget, unit),
 			Period: periodLabel(q.Period, lang),
+			PerKey: perKey[q.Period],
 		})
+	}
+	return out
+}
+
+// perKeyWindows reports which of a profile's windows apply to each key on its
+// own rather than to the person.
+//
+// Only the widest window is held against the person, across all their keys
+// and every rotation. LiteLLM holds one window per user, so the shorter ones
+// stay on the key: each key counts them separately, and a regenerated key
+// starts them over. They protect the user against runaway spend rather than
+// ration the deployment's budget. A single window is the person's.
+//
+// The split is the provider's own, so the label cannot drift from what is
+// enforced. The dashboard's usage card does not need this: the provider
+// reports where each window it read lives.
+func perKeyWindows(windows []keyprovider.QuotaWindow) map[string]bool {
+	_, rest := litellm.WidestWindow(effectiveWindows(windows))
+	perKey := make(map[string]bool, len(rest))
+	for _, w := range rest {
+		perKey[w.Period] = true
+	}
+	return perKey
+}
+
+// effectiveWindows drops the windows that set no allowance.
+func effectiveWindows(windows []keyprovider.QuotaWindow) []keyprovider.QuotaWindow {
+	out := make([]keyprovider.QuotaWindow, 0, len(windows))
+	for _, w := range windows {
+		if w.Budget > 0 && w.Period != "" {
+			out = append(out, w)
+		}
 	}
 	return out
 }
@@ -693,6 +730,17 @@ type usageReport struct {
 	KeyMissing bool
 }
 
+// AnyPerKey reports whether a window on the card is enforced per key, so the
+// card explains the marker only when it shows one.
+func (r usageReport) AnyPerKey() bool {
+	for _, w := range r.Windows {
+		if w.PerKey {
+			return true
+		}
+	}
+	return false
+}
+
 // quotaWindowView is one quota window as the dashboard renders it.
 //
 // Label is pre-formatted here rather than in the template, the way the account
@@ -706,6 +754,7 @@ type quotaWindowView struct {
 	Limit    float64
 	Pct      int
 	ResetsAt time.Time
+	PerKey   bool // see keyprovider.WindowUsage
 }
 
 // userUsage summarises what the user has consumed.
@@ -817,6 +866,7 @@ func (u *UI) quotaWindows(ctx context.Context, ref, ownerID string, lang i18n.La
 			Limit:    w.Limit,
 			Pct:      quotaPct(w.Used, w.Limit),
 			ResetsAt: w.ResetsAt,
+			PerKey:   w.PerKey,
 		})
 	}
 	return out, nil
