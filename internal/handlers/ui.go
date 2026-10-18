@@ -548,12 +548,19 @@ func (u *UI) ExtendKey(w http.ResponseWriter, r *http.Request) {
 		httpError(w, r, http.StatusInternalServerError, "Failed to extend key", err)
 		return
 	}
-	if err := u.store.UpdateAPIKeyExpiry(r.Context(), k.ID, newExpiry); err != nil {
-		slog.Error("update key expiry in db", "err", err)
+	// The key is extended either way, so record that even if the row keeps the
+	// old date.
+	storeErr := u.store.UpdateAPIKeyExpiry(r.Context(), k.ID, newExpiry)
+	u.audit(r, database.AuditKeyExtended, su.User, "until "+newExpiry.Format("2006-01-02")+recordNote(storeErr))
+	if storeErr != nil {
+		// The sync reads the old date from the row, so kicking it would not
+		// help. Extending again is safe and writes the new date.
+		metrics.KeyOperations.WithLabelValues("extend", "store_error").Inc()
+		httpError(w, r, http.StatusInternalServerError, "Your key was extended, but Keyosk could not update its records. Please try again.", storeErr, "key_id", k.ID)
+		return
 	}
 
 	metrics.KeyOperations.WithLabelValues("extend", "success").Inc()
-	u.audit(r, database.AuditKeyExtended, su.User, "until "+newExpiry.Format("2006-01-02"))
 
 	// An expired key is never pushed, so it may have missed a profile change
 	// and now works again with the old limits. Push it now rather than on the
@@ -596,14 +603,25 @@ func (u *UI) DeleteKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// The key is revoked either way, so record that even if the row stays.
-	u.audit(r, database.AuditKeyDeleted, su.User, "key "+k.KeyPrefix)
-	if err := u.store.DeleteAPIKey(r.Context(), k.ID); err != nil {
+	storeErr := u.store.DeleteAPIKey(r.Context(), k.ID)
+	u.audit(r, database.AuditKeyDeleted, su.User, "key "+k.KeyPrefix+recordNote(storeErr))
+	if storeErr != nil {
 		metrics.KeyOperations.WithLabelValues("delete", "store_error").Inc()
-		httpError(w, r, http.StatusInternalServerError, "Your key was revoked, but Keyosk could not update its records", err, "key_id", k.ID)
+		httpError(w, r, http.StatusInternalServerError, "Your key was revoked, but Keyosk could not update its records. Please try again.", storeErr, "key_id", k.ID)
 		return
 	}
 	metrics.KeyOperations.WithLabelValues("delete", "success").Inc()
 	http.Redirect(w, r, "/", http.StatusFound)
+}
+
+// recordNote marks the audit detail of a key change that happened in the
+// gateway but could not be stored. The user's or admin's retry is audited
+// again, and the note tells the reader why the change appears twice.
+func recordNote(storeErr error) string {
+	if storeErr != nil {
+		return " (record not updated)"
+	}
+	return ""
 }
 
 // daysUntilExpiry reports whole days remaining; negative once expired.

@@ -390,7 +390,7 @@ func TestDeleteKeyKeepsRowWhenUpstreamFails(t *testing.T) {
 // If the row cannot be removed after the upstream delete, the user must hear
 // about it rather than be sent back to a dashboard that still shows the key.
 func TestDeleteKeyReportsStoreFailure(t *testing.T) {
-	ui, fake, _, _ := newTestUI(t, "kf6c")
+	ui, fake, store, _ := newTestUI(t, "kf6c")
 	ctx := context.Background()
 	post(t, ui, ui.GenerateKey, "/key/generate")
 
@@ -403,8 +403,76 @@ func TestDeleteKeyReportsStoreFailure(t *testing.T) {
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500 when the store fails, got %d", rec.Code)
 	}
+	if !strings.Contains(rec.Body.String(), "Your key was revoked, but Keyosk could not update its records. Please try again.") {
+		t.Errorf("body = %q, want it to say the key was revoked and to try again", rec.Body.String())
+	}
 	if fake.LiveCount() != 0 {
 		t.Errorf("provider still holds %d keys", fake.LiveCount())
+	}
+	events, err := store.ListAuditEvents(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) == 0 || events[0].Action != database.AuditKeyDeleted || !strings.HasSuffix(events[0].Detail, " (record not updated)") {
+		t.Errorf("audit = %+v, want the delete, marked as not recorded", events)
+	}
+}
+
+// If the new date cannot be stored after the gateway extended the key, the
+// user must hear about it rather than see the old date on the dashboard, and
+// extending again must store it.
+func TestExtendKeyReportsStoreFailure(t *testing.T) {
+	ui, fake, store, user := newTestUI(t, "kf-extend-store")
+	ctx := context.Background()
+	post(t, ui, ui.GenerateKey, "/key/generate")
+	before, _ := store.GetAPIKeyByUser(ctx, user.ID)
+
+	if _, err := rawDB(t, "kf-extend-store").ExecContext(ctx, `CREATE TRIGGER block_update BEFORE UPDATE ON api_keys
+		BEGIN SELECT RAISE(ABORT, 'blocked'); END`); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := post(t, ui, ui.ExtendKey, "/key/extend")
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 when the store fails, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "Your key was extended") {
+		t.Errorf("body = %q, want it to say the key was extended", rec.Body.String())
+	}
+	if len(fake.Extended) != 1 {
+		t.Fatalf("provider extends = %v, want one", fake.Extended)
+	}
+	if k, _ := store.GetAPIKeyByUser(ctx, user.ID); !k.ExpiresAt.Equal(before.ExpiresAt) {
+		t.Errorf("stored expiry moved to %v although the write failed", k.ExpiresAt)
+	}
+	events, err := store.ListAuditEvents(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var extended []database.AuditEvent
+	for _, e := range events {
+		if e.Action == database.AuditKeyExtended {
+			extended = append(extended, e)
+		}
+	}
+	if len(extended) != 1 || !strings.HasSuffix(extended[0].Detail, " (record not updated)") {
+		t.Errorf("audit = %+v, want one extend, which happened in the gateway, marked as not recorded", events)
+	}
+
+	if _, err := rawDB(t, "kf-extend-store").ExecContext(ctx, `DROP TRIGGER block_update`); err != nil {
+		t.Fatal(err)
+	}
+	if rec := post(t, ui, ui.ExtendKey, "/key/extend"); rec.Code != http.StatusFound {
+		t.Fatalf("retried extend returned %d, want 302", rec.Code)
+	}
+	if events, _ := store.ListAuditEvents(ctx, 1); len(events) != 1 || events[0].Action != database.AuditKeyExtended ||
+		strings.Contains(events[0].Detail, "record not updated") {
+		t.Errorf("audit = %+v, want the retry's extend without the note", events)
+	}
+	k, _ := store.GetAPIKeyByUser(ctx, user.ID)
+	// The database keeps microseconds, the fake nanoseconds.
+	if want := fake.Keys[k.KeyRef].ExpiresAt; !k.ExpiresAt.Truncate(time.Second).Equal(want.Truncate(time.Second)) {
+		t.Errorf("stored expiry = %v after the retry, want the gateway's %v", k.ExpiresAt, want)
 	}
 }
 

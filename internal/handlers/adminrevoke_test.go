@@ -124,6 +124,51 @@ func TestRevokeUserKeyKeepsRowWhenUpstreamFails(t *testing.T) {
 	}
 }
 
+// If the row cannot be removed after the gateway delete, the admin must not be
+// told the key is simply gone while the panel still lists it, and revoking
+// again must remove the row.
+func TestRevokeUserKeyReportsStoreFailure(t *testing.T) {
+	a, store, token, fake, user := newRevokeTestAdmin(t, "revoke-store")
+	ctx := context.Background()
+	key, _ := store.GetAPIKeyByUser(ctx, user.ID)
+
+	if _, err := rawDB(t, "revoke-store").ExecContext(ctx, `CREATE TRIGGER block_delete BEFORE DELETE ON api_keys
+		BEGIN SELECT RAISE(ABORT, 'blocked'); END`); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := postAdminForm(t, a.RevokeUserKey, token, "/admin/users/1/key/revoke", user.ID, nil)
+	want := "Key revoked, but Keyosk could not update its records. Revoke it again to remove it from the list."
+	if got := flashOf(t, rec.Header().Get("Location")); got != want {
+		t.Errorf("flash = %q, want %q", got, want)
+	}
+	if fake.LiveCount() != 0 {
+		t.Errorf("gateway still holds %d keys", fake.LiveCount())
+	}
+	if k, _ := store.GetAPIKeyByUser(ctx, user.ID); k == nil || k.KeyRef != key.KeyRef {
+		t.Fatal("key row gone although the delete was blocked")
+	}
+	// The retry is audited again, so this one says why the revoke shows twice.
+	if events, _ := store.ListAuditEvents(ctx, 10); len(events) != 1 || events[0].Action != database.AuditKeyRevoked ||
+		events[0].Detail != "key "+key.KeyPrefix+" (record not updated)" {
+		t.Errorf("audit = %+v, want the revoke, which happened in the gateway, marked as not recorded", events)
+	}
+
+	if _, err := rawDB(t, "revoke-store").ExecContext(ctx, `DROP TRIGGER block_delete`); err != nil {
+		t.Fatal(err)
+	}
+	rec = postAdminForm(t, a.RevokeUserKey, token, "/admin/users/1/key/revoke", user.ID, nil)
+	if got := flashOf(t, rec.Header().Get("Location")); got != "Key revoked" {
+		t.Errorf("retry flash = %q, want %q", got, "Key revoked")
+	}
+	if k, _ := store.GetAPIKeyByUser(ctx, user.ID); k != nil {
+		t.Error("key row still present after the retry")
+	}
+	if events, _ := store.ListAuditEvents(ctx, 10); len(events) != 2 || events[0].Detail != "key "+key.KeyPrefix {
+		t.Errorf("audit = %+v, want the retry's revoke without the note", events)
+	}
+}
+
 // A user without a key, or no such user, is reported as such, and nothing is
 // deleted or audited.
 func TestRevokeUserKeyWithoutAKey(t *testing.T) {
