@@ -645,6 +645,7 @@ func (s *Store) GetAPIKeyByUser(ctx context.Context, userID int64) (*APIKey, err
 // the user with no key at all if the insert failed.
 func (s *Store) ReplaceAPIKey(ctx context.Context, k *APIKey) error {
 	k.CreatedAt = time.Now()
+	k.ExpirySetAt = k.CreatedAt
 	return s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		if _, err := tx.NewDelete().Model((*APIKey)(nil)).
 			Where("user_id = ?", k.UserID).Exec(ctx); err != nil {
@@ -659,17 +660,26 @@ func (s *Store) ReplaceAPIKey(ctx context.Context, k *APIKey) error {
 
 func (s *Store) CreateAPIKey(ctx context.Context, k *APIKey) error {
 	k.CreatedAt = time.Now()
+	k.ExpirySetAt = k.CreatedAt
 	_, err := s.db.NewInsert().Model(k).Exec(ctx)
 	return err
 }
 
 // UpdateAPIKeyExpiry moves a key's expiry date and clears the expiry notices
 // already sent for it. Those notices were about the old date; leaving them
-// would make the reminder job skip every warning for the new one.
+// would make the reminder job skip every warning for the new one. The key's
+// validity now starts over, so expiry_set_at moves to now.
 func (s *Store) UpdateAPIKeyExpiry(ctx context.Context, keyID int64, expiresAt time.Time) error {
+	return s.SetAPIKeyExpiry(ctx, keyID, time.Now(), expiresAt)
+}
+
+// SetAPIKeyExpiry is UpdateAPIKeyExpiry with the date set as of setAt rather
+// than now, for a dev instance that shows a key partway through its validity.
+func (s *Store) SetAPIKeyExpiry(ctx context.Context, keyID int64, setAt, expiresAt time.Time) error {
 	return s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		if _, err := tx.NewUpdate().Model((*APIKey)(nil)).
 			Set("expires_at = ?", expiresAt).
+			Set("expiry_set_at = ?", setAt).
 			Where("id = ?", keyID).
 			Exec(ctx); err != nil {
 			return fmt.Errorf("update expiry: %w", err)
@@ -942,13 +952,31 @@ func (s *Store) KeysExpiringWithin(ctx context.Context, daysBefore int) ([]Expir
 	return rows, err
 }
 
-// MarkExpiryNoticeSent records a delivered warning. The unique index makes this
-// the point at which a concurrent duplicate is rejected.
+// MarkExpiryNoticeSent records a delivered warning. A notice already recorded,
+// by a concurrent run or as skipped, is left alone.
 func (s *Store) MarkExpiryNoticeSent(ctx context.Context, keyID int64, daysBefore int) error {
 	_, err := s.db.NewInsert().Model(&ExpiryNotice{
 		APIKeyID:   keyID,
 		DaysBefore: daysBefore,
 		SentAt:     time.Now(),
-	}).Exec(ctx)
+	}).On("CONFLICT (api_key_id, days_before) DO NOTHING").Exec(ctx)
+	return err
+}
+
+// SkipExpiryNotices records notices for daysBefore as sent without a mail, so
+// the reminder does not send them later. Their sent_at is when a narrower
+// notice superseded them, not a delivery. Notices already recorded are left
+// alone.
+func (s *Store) SkipExpiryNotices(ctx context.Context, keyID int64, daysBefore ...int) error {
+	if len(daysBefore) == 0 {
+		return nil
+	}
+	now := time.Now()
+	notices := make([]ExpiryNotice, len(daysBefore))
+	for i, d := range daysBefore {
+		notices[i] = ExpiryNotice{APIKeyID: keyID, DaysBefore: d, SentAt: now}
+	}
+	_, err := s.db.NewInsert().Model(&notices).
+		On("CONFLICT (api_key_id, days_before) DO NOTHING").Exec(ctx)
 	return err
 }

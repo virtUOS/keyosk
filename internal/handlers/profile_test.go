@@ -70,25 +70,36 @@ func TestDashboardQuotaRendering(t *testing.T) {
 }
 
 // The dashboard warning must escalate as expiry approaches and agree with the
-// widest email threshold, so the two channels do not contradict each other.
+// widest email threshold that applies to the key, so the two channels do not
+// contradict each other: a 14-day key gets no 14-day mail, so it is not
+// urgent at 13 days left either.
 func TestExpiryWarningThresholds(t *testing.T) {
 	cases := []struct {
 		name   string
 		in     time.Duration
+		valid  time.Duration // 0: the key's validity is unknown
 		days   int
 		urgent bool
 	}{
-		{"no key", 0, 0, false},
-		{"fresh 90d", 90*24*time.Hour + time.Minute, 90, false},
-		{"just outside window", 15*24*time.Hour + time.Minute, 15, false},
-		{"inside window", 13*24*time.Hour + time.Minute, 13, true},
-		{"tomorrow", 25*time.Hour + time.Minute, 1, true},
-		{"expired", -48 * time.Hour, -2, true},
+		{"no key", 0, 0, 0, false},
+		{"fresh 90d", 90*24*time.Hour + time.Minute, 0, 90, false},
+		{"just outside window", 15*24*time.Hour + time.Minute, 0, 15, false},
+		{"inside window", 13*24*time.Hour + time.Minute, 0, 13, true},
+		{"tomorrow", 25*time.Hour + time.Minute, 0, 1, true},
+		{"expired", -48 * time.Hour, 0, -2, true},
+		{"fresh 14d key", 14*24*time.Hour + time.Minute, 14 * 24 * time.Hour, 14, false},
+		{"14d key, 5 days left", 5*24*time.Hour + time.Minute, 14 * 24 * time.Hour, 5, false},
+		{"14d key, 2 days left", 2*24*time.Hour + time.Minute, 14 * 24 * time.Hour, 2, true},
+		{"30d key, 13 days left", 13*24*time.Hour + time.Minute, 30 * 24 * time.Hour, 13, true},
 	}
 	for _, c := range cases {
 		var k *database.APIKey
 		if c.name != "no key" {
-			k = &database.APIKey{ExpiresAt: time.Now().Add(c.in)}
+			expires := time.Now().Add(c.in)
+			k = &database.APIKey{ExpiresAt: expires}
+			if c.valid > 0 {
+				k.ExpirySetAt = expires.Add(-c.valid)
+			}
 		}
 		if got := daysUntilExpiry(k); got != c.days {
 			t.Errorf("%s: days = %d, want %d", c.name, got, c.days)

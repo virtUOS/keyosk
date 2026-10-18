@@ -95,9 +95,11 @@ type Persona struct {
 	// each to.
 	Key      bool
 	Requests []string
-	// ExpiredKey backdates the key, and MissingKey deletes it in the gateway.
-	ExpiredKey bool
-	MissingKey bool
+	// ExpiringKey backdates the key to two of its 30 days left, ExpiredKey
+	// past its date, and MissingKey deletes it in the gateway.
+	ExpiringKey bool
+	ExpiredKey  bool
+	MissingKey  bool
 
 	// Shows is what the persona is for, as the seed prints it.
 	Shows string
@@ -122,9 +124,9 @@ var Personas = []Persona{
 	{Sub: "restricted", Profile: "Small only", Key: true,
 		Requests: []string{"mock-small", "mock-small", "mock-small"},
 		Shows:    "one model, with rate limits"},
-	{Sub: "expiring", Profile: "Short keys", Key: true,
+	{Sub: "expiring", Key: true, ExpiringKey: true,
 		Requests: []string{"mock-small"},
-		Shows:    "a key that expires in three days"},
+		Shows:    "a key with two days left, and its reminder in Mailpit"},
 	{Sub: "expired", Key: true, ExpiredKey: true,
 		Requests: []string{"mock-small"},
 		Shows:    "an expired key"},

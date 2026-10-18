@@ -23,14 +23,14 @@ func sha256Hex(s string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// migrateBeforeKeyRef runs every migration up to, but not including, the one
-// that hashes stored keys.
-func migrateBeforeKeyRef(t *testing.T, s *Store) {
+// migrateBefore runs every migration up to, but not including, the one with
+// the given name.
+func migrateBefore(t *testing.T, s *Store, name string) {
 	t.Helper()
 	ctx := context.Background()
 	before := migrate.NewMigrations()
 	for _, m := range migrations.Migrations.Sorted() {
-		if m.Name < migrations.KeyRefName {
+		if m.Name < name {
 			before.Add(m)
 		}
 	}
@@ -48,7 +48,7 @@ func migrateBeforeKeyRef(t *testing.T, s *Store) {
 func TestMigrationHashesStoredKeys(t *testing.T) {
 	s := testStore(t, "kr1")
 	ctx := context.Background()
-	migrateBeforeKeyRef(t, s)
+	migrateBefore(t, s, migrations.KeyRefName)
 
 	now := time.Now()
 	hashed := sha256Hex("sk-already-hashed")

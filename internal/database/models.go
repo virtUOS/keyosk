@@ -125,6 +125,10 @@ type APIKey struct {
 	// limit sync unmarks it if it returns and removes it once the grace period
 	// has passed.
 	MissingSince *time.Time `bun:"missing_since"`
+
+	// ExpirySetAt is when ExpiresAt was last set, by creating or extending the
+	// key. The expiry reminder measures the key's validity from here.
+	ExpirySetAt time.Time `bun:"expiry_set_at"`
 }
 
 type Session struct {

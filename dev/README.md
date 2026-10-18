@@ -200,9 +200,9 @@ They are in `dev/mock-users.json`, and the reminder for `expiring`'s key is in
 Mailpit.
 
 Everything a user or admin can do, the seed does through the app's own pages,
-so keys, limits and the audit log are what the app makes of them. Only an
-expired key and a passed deadline are written to the database directly, since
-no page can make them.
+so keys, limits and the audit log are what the app makes of them. Only a key
+partway through its validity, an expired key and a passed deadline are written
+to the database directly, since no page can make them without waiting.
 
 The personas and profiles are defined in `internal/devseed/personas.go`. The
 browser tests use them as fixtures, so a change there is a change to the

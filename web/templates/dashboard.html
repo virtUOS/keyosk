@@ -100,7 +100,7 @@
         </dd>
         <dt>{{T .Lang "dash.expires"}} <button type="button" class="help" data-help="{{T .Lang "dash.expires.help"}}">?</button></dt>
         <dd>
-          <span class="expiry" data-date="{{.APIKey.ExpiresAt.Format "2006-01-02"}}"></span>
+          <span class="expiry" data-date="{{.APIKey.ExpiresAt.Format "2006-01-02"}}"{{if .ExpiryUrgent}} data-urgent{{end}}></span>
           &nbsp;{{.APIKey.ExpiresAt.Format "2006-01-02"}}
         </dd>
       </dl>
@@ -480,11 +480,12 @@ function copyModel(btn) {
   if (first) showExample(first.dataset.model);
 }
 
-// Colour expiry badges
+// Colour expiry badges. The server decides when a key is urgent, so the
+// badge and the alert above it agree.
 document.querySelectorAll('.expiry').forEach(el => {
   const d = new Date(el.dataset.date + 'T23:59:59');
   const days = Math.round((d - Date.now()) / 86400000);
-  const cls = days < 0 ? 'badge-expired' : days < 14 ? 'badge-warn' : 'badge-ok';
+  const cls = days < 0 ? 'badge-expired' : 'urgent' in el.dataset ? 'badge-warn' : 'badge-ok';
   el.classList.add('badge', cls);
   el.textContent = days < 0 ? T_TIME.expired : days === 0 ? T_TIME.today : days + T_TIME.left;
 });

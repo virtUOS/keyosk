@@ -4,21 +4,27 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/virtuos/keyosk/internal/database"
 )
 
 // DefaultThresholds are how many days before expiry a user is warned.
-// Ordered widest-first so a key created inside the window still gets the
-// earliest applicable notice rather than only the last-minute one.
 var DefaultThresholds = []int{14, 3, 1}
+
+// relevantShare is how much of a key's validity a threshold may span and still
+// be worth a mail. Someone who just created or extended a 14-day key has seen
+// the date and needs no "expires in 14 days" notice; they get the 3- and 1-day
+// ones. The validity counts from when the date was last set.
+const relevantShare = 0.8
 
 // Reminder warns users whose keys are close to expiring.
 type Reminder struct {
-	store      *database.Store
-	notifier   Notifier
-	frontend   string
+	store    *database.Store
+	notifier Notifier
+	frontend string
+	// thresholds are sorted narrowest first, which Run relies on.
 	thresholds []int
 }
 
@@ -26,32 +32,57 @@ func NewReminder(store *database.Store, n Notifier, frontendURL string, threshol
 	if len(thresholds) == 0 {
 		thresholds = DefaultThresholds
 	}
-	return &Reminder{store: store, notifier: n, frontend: frontendURL, thresholds: thresholds}
+	return &Reminder{store: store, notifier: n, frontend: frontendURL,
+		thresholds: slices.Sorted(slices.Values(thresholds))}
 }
 
 // Run sends any notices due now. It is safe to call repeatedly: a notice is
 // recorded per (key, threshold) and skipped thereafter.
+//
+// A key gets at most one mail per run. Thresholds are handled narrowest first,
+// and a sent notice also records every wider one, so a key inside several
+// windows, for instance after downtime, gets only the most urgent notice.
 func (r *Reminder) Run(ctx context.Context) error {
-	for _, days := range r.thresholds {
+	// Keys whose notice failed this run. A wider notice must not go out in
+	// its place if the relay recovers before the next threshold.
+	failed := map[int64]bool{}
+	for i, days := range r.thresholds {
 		keys, err := r.store.KeysExpiringWithin(ctx, days)
 		if err != nil {
 			return fmt.Errorf("find keys expiring within %dd: %w", days, err)
 		}
 		for _, k := range keys {
+			if failed[k.ID] || !Relevant(&k.APIKey, days) {
+				continue
+			}
 			msg := r.message(k, days)
 			if err := r.notifier.Notify(ctx, msg); err != nil {
 				// Leave the notice unrecorded so the next run retries.
+				failed[k.ID] = true
 				slog.Error("send expiry notice",
 					"email", k.Email, "key_prefix", k.KeyPrefix, "days", days, "err", err)
 				continue
 			}
 			if err := r.store.MarkExpiryNoticeSent(ctx, k.ID, days); err != nil {
-				// A duplicate here means a concurrent run already sent it.
 				slog.Error("record expiry notice", "key_id", k.ID, "err", err)
+			}
+			// The wider notices are stale now; without a record a later
+			// threshold in this run would mail the key again.
+			if err := r.store.SkipExpiryNotices(ctx, k.ID, r.thresholds[i+1:]...); err != nil {
+				slog.Error("skip wider expiry notices", "key_id", k.ID, "err", err)
 			}
 		}
 	}
 	return nil
+}
+
+// Relevant reports whether a notice days before expiry is worth sending for
+// k: the threshold must be under relevantShare of the key's validity. The
+// dashboard uses the same rule, so it nags only when a mail would go out.
+func Relevant(k *database.APIKey, days int) bool {
+	validity := k.ExpiresAt.Sub(k.ExpirySetAt)
+	lead := time.Duration(days) * 24 * time.Hour
+	return float64(lead) < relevantShare*float64(validity)
 }
 
 // Start runs the reminder on an interval until ctx is cancelled.
