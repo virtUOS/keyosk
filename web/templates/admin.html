@@ -234,10 +234,14 @@
     <!-- ── Users tab ──────────────────────────────────────── -->
     <div id="tab-users" class="tab-panel">
 
-      <h2 style="margin-bottom:1.25rem">{{T .Lang "admin.users"}}</h2>
+      <div class="section-head">
+        <h2>{{T .Lang "admin.users"}}</h2>
+        <input type="search" class="table-filter" data-filter="users-table" autocomplete="off"
+               placeholder="{{T .Lang "admin.filter"}}" aria-label="{{T .Lang "admin.filter"}}">
+      </div>
 
       <div class="table-wrap">
-        <table class="stack-md">
+        <table class="stack-md" id="users-table">
           <thead>
             <tr>
               <th>{{T .Lang "admin.col.name"}}</th>
@@ -315,8 +319,9 @@
               </td>
             </tr>
             {{else}}
-            <tr><td colspan="6" class="text-faint" style="text-align:center">{{T .Lang "admin.nousers"}}</td></tr>
+            <tr class="empty-row"><td colspan="6" class="text-faint" style="text-align:center">{{T .Lang "admin.nousers"}}</td></tr>
             {{end}}
+            <tr class="empty-row no-match" hidden><td colspan="6" class="text-faint" style="text-align:center">{{T .Lang "admin.filter.nomatch"}}</td></tr>
           </tbody>
         </table>
       </div>
@@ -460,12 +465,16 @@
 
     <!-- ── Audit tab ──────────────────────────────────────── -->
     <div id="tab-audit" class="tab-panel">
-      <h2 style="margin-bottom:1.25rem">{{T .Lang "admin.audit"}}</h2>
+      <div class="section-head">
+        <h2>{{T .Lang "admin.audit"}}</h2>
+        <input type="search" class="table-filter" data-filter="audit-table" autocomplete="off"
+               placeholder="{{T .Lang "admin.filter"}}" aria-label="{{T .Lang "admin.filter"}}">
+      </div>
       <p class="text-muted" style="margin-bottom:1rem;font-size:.9rem">
         {{T .Lang "admin.audit.note"}}
       </p>
       <div class="table-wrap">
-        <table class="stack-lg">
+        <table class="stack-lg" id="audit-table">
           <thead>
             <tr>
               <th>{{T .Lang "admin.col.when"}}</th>
@@ -485,8 +494,9 @@
               <td class="cell-prose text-muted" data-label="{{T $.Lang "admin.col.detail"}}">{{.Detail}}</td>
             </tr>
             {{else}}
-            <tr><td colspan="5" class="text-faint" style="text-align:center">{{T $.Lang "admin.noevents"}}</td></tr>
+            <tr class="empty-row"><td colspan="5" class="text-faint" style="text-align:center">{{T $.Lang "admin.noevents"}}</td></tr>
             {{end}}
+            <tr class="empty-row no-match" hidden><td colspan="5" class="text-faint" style="text-align:center">{{T $.Lang "admin.filter.nomatch"}}</td></tr>
           </tbody>
         </table>
       </div>
@@ -517,6 +527,31 @@ function filterCandidates(q) {
   sel.replaceChildren(sel.options[0], ...adminCandidates.filter(
     o => q === '' || o.textContent.toLowerCase().includes(q)));
 }
+
+// The filter boxes above the users and the audit log hide the rows that do
+// not contain what is typed. Each row's text is gathered once, from its cells
+// without the row menu, whose entries ("Edit", "Revoke key") would otherwise
+// match every row. Not from innerText: a hidden row's innerText falls back to
+// the raw text, menu included.
+function rowText(tr) {
+  return Array.from(tr.cells).filter(td => !td.classList.contains('cell-menu'))
+    .map(td => td.textContent).join(' ').replace(/\s+/g, ' ').toLowerCase();
+}
+document.querySelectorAll('.table-filter').forEach(input => {
+  const tbody = document.getElementById(input.dataset.filter).tBodies[0];
+  const noMatch = tbody.querySelector('.no-match');
+  const rows = Array.from(tbody.rows).filter(r => !r.classList.contains('empty-row'))
+    .map(r => [r, rowText(r)]);
+  input.addEventListener('input', () => {
+    const q = input.value.trim().replace(/\s+/g, ' ').toLowerCase();
+    let shown = 0;
+    for (const [r, text] of rows) {
+      r.hidden = !text.includes(q);
+      if (!r.hidden) shown++;
+    }
+    noMatch.hidden = shown > 0 || rows.length === 0;
+  });
+});
 
 // The selected tab lives in the URL hash, so a reload or a shared link comes
 // back to it. "admin" is accepted as an alias for "admins".

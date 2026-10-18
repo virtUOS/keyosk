@@ -308,12 +308,16 @@ main.main-wide { max-width: 1280px; }
 /* A heading with an action beside it, such as "Profiles" and "New profile". */
 .section-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
   margin-bottom: 1.25rem;
 }
 .card .section-head h2 { margin-bottom: 0; }
+/* The filter box above a table, in place of an action. It shares the row with
+   the heading and wraps below it when there is no room. */
+.section-head .table-filter { flex: 1 1 14rem; max-width: 20rem; }
 
 /* ── Cards ───────────────────────────────────────────────── */
 .card {

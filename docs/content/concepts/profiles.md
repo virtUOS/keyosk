@@ -13,12 +13,16 @@ The admin panel at `/admin` provides:
   the date empty for a permanent assignment.
 - **Admins** — list the admins, and promote and remove them when the panel
   manages them; see [Administrators](../administrators.md).
-- **Audit log** — the 50 most recent key and profile changes, recording who did
-  what to whom. Rows outlive the key and user they describe, so revoking does
-  not erase the history. Changes nobody in Keyosk made, such as a profile
+- **Audit log** — the 500 most recent key and profile changes, recording who
+  did what to whom. Rows outlive the key and user they describe, so revoking
+  does not erase the history. Changes nobody in Keyosk made, such as a profile
   deadline passing or a key found missing from the gateway (`key.missing`,
   and later `key.found` or `key.gone`), are recorded with `system` as the
   actor.
+
+  The users and the audit log each have a filter box that narrows the table to
+  the rows containing what you type. It searches what the page holds, so on
+  the audit log only those 500 changes.
 - **Limit sync status** — a card above the tabs says whether all keys
   carry their profile's current limits yet. If not, it shows how many are still
   waiting, whether an update is running, which keys failed and why, and each
