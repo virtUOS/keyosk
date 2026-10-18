@@ -80,6 +80,12 @@ set up yet, such as a missing first admin, an open `/metrics` or missing email.
 `GET /readyz` answers `200` once it is ready; see
 [Health checks](monitoring.md#health-checks).
 
+The default profile applies to everyone who has no profile of their own, and
+the one created on the first start has no usage limit. Until an admin gives it
+one, or makes a limited profile the default, those users can spend without a
+cap. Set this up before you let users in; the startup log and the top of the
+admin panel say so for as long as the default is unlimited.
+
 ## The first admin
 
 With `ADMIN_GROUP` set, as above, the members of that group are the admins

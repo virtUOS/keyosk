@@ -16,6 +16,15 @@
   <div class="alert alert-info">{{.Flash}}</div>
   {{end}}
 
+  {{/* An unlimited default lets everyone without a profile of their own spend
+       without a cap. The notice goes away once the default has a quota. */}}
+  {{range .Profiles}}{{if and .IsDefault (not .Quotas)}}
+  <div id="unlimited-default" class="alert alert-warning">
+    <strong style="display:block;margin-bottom:.25rem">{{T $.Lang "admin.default.unlimited.title"}}</strong>
+    {{printf (T $.Lang "admin.default.unlimited.body") .Name}}
+  </div>
+  {{end}}{{end}}
+
   {{with .LimitSync}}
   <div id="limit-sync" class="alert {{if .Unavailable}}alert-danger{{else if .OK}}alert-success{{else if .Failures}}alert-warning{{else}}alert-info{{end}}">
     <strong style="display:block;margin-bottom:.25rem">{{T $.Lang "admin.sync.title"}}</strong>
