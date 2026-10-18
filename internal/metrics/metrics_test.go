@@ -174,23 +174,40 @@ func TestRequireTokenEmptyLetsEveryoneThrough(t *testing.T) {
 	}
 }
 
+// Item failures are pre-registered for the jobs that have items, so a
+// dashboard shows zero rather than "no data" before the first failure.
+func TestJobItemFailureSeriesPreRegistered(t *testing.T) {
+	for _, job := range []string{metrics.JobExpiryReminder, metrics.JobProfileExpiry, metrics.JobLimitSync} {
+		rec := httptest.NewRecorder()
+		metrics.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+		if want := `keyosk_job_item_failures_total{task="` + job + `"} `; !strings.Contains(rec.Body.String(), want) {
+			t.Errorf("missing pre-registered series: %s", want)
+		}
+	}
+	before := metricstest.Counter(t, "keyosk_job_item_failures_total", `task="test_job"`)
+	metrics.JobItemFailed("test_job")
+	if got := metricstest.Counter(t, "keyosk_job_item_failures_total", `task="test_job"`) - before; got != 1 {
+		t.Errorf("item failures rose by %v, want 1", got)
+	}
+}
+
 // A job's last success reads as its start until the first success, so a job
 // that never succeeds alerts like one that stopped, and moves on each success.
 func TestJobLastSuccess(t *testing.T) {
 	const job = "test_job"
 	before := float64(time.Now().UnixNano()) / 1e9
 	metrics.JobStarted(job, 15*time.Minute)
-	if got := metricstest.Gauge(t, "keyosk_job_interval_seconds", `job="test_job"`); got != 900 {
+	if got := metricstest.Gauge(t, "keyosk_job_interval_seconds", `task="test_job"`); got != 900 {
 		t.Errorf("interval = %v, want 900", got)
 	}
-	started := metricstest.Gauge(t, "keyosk_job_last_success_timestamp_seconds", `job="test_job"`)
+	started := metricstest.Gauge(t, "keyosk_job_last_success_timestamp_seconds", `task="test_job"`)
 	if started < before {
 		t.Errorf("last success after start = %v, want the start time (>= %v)", started, before)
 	}
 
 	time.Sleep(time.Millisecond)
 	metrics.JobSucceeded(job)
-	if got := metricstest.Gauge(t, "keyosk_job_last_success_timestamp_seconds", `job="test_job"`); got <= started {
+	if got := metricstest.Gauge(t, "keyosk_job_last_success_timestamp_seconds", `task="test_job"`); got <= started {
 		t.Errorf("last success after success = %v, want later than %v", got, started)
 	}
 }

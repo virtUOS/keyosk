@@ -39,7 +39,8 @@ func NewReminder(store *database.Store, n Notifier, frontendURL string, threshol
 }
 
 // Run sends any notices due now. It is safe to call repeatedly: a notice is
-// recorded per (key, threshold) and skipped thereafter.
+// recorded per (key, threshold) and skipped thereafter. A cancelled ctx ends
+// the run with its error; the notices left over are not failures.
 //
 // A key gets at most one mail per run. Thresholds are handled narrowest first,
 // and a sent notice also records every wider one, so a key inside several
@@ -54,6 +55,9 @@ func (r *Reminder) Run(ctx context.Context) error {
 			return fmt.Errorf("find keys expiring within %dd: %w", days, err)
 		}
 		for _, k := range keys {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			if failed[k.ID] || !Relevant(&k.APIKey, days) {
 				continue
 			}
@@ -65,15 +69,22 @@ func (r *Reminder) Run(ctx context.Context) error {
 				// expires, so record it as done.
 				slog.Warn("expiry notice rejected by the relay, not retrying",
 					"email", k.Email, "key_prefix", k.KeyPrefix, "days", days, "err", err)
+			case ctx.Err() != nil:
+				return ctx.Err()
 			case err != nil:
 				// Leave the notice unrecorded so the next run retries.
 				failed[k.ID] = true
 				slog.Error("send expiry notice",
 					"email", k.Email, "key_prefix", k.KeyPrefix, "days", days, "err", err)
+				metrics.JobItemFailed(metrics.JobExpiryReminder)
 				continue
 			}
 			if err := r.store.MarkExpiryNoticeSent(ctx, k.ID, days); err != nil {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
 				slog.Error("record expiry notice", "key_id", k.ID, "err", err)
+				metrics.JobItemFailed(metrics.JobExpiryReminder)
 			}
 			// The wider notices are stale now; without a record a later
 			// threshold in this run would mail the key again.

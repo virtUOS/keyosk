@@ -16,6 +16,7 @@ import (
 	"github.com/uptrace/bun/driver/sqliteshim"
 
 	"github.com/virtuos/keyosk/internal/database"
+	"github.com/virtuos/keyosk/internal/metrics/metricstest"
 )
 
 // recorder captures messages instead of sending them.
@@ -26,11 +27,17 @@ type recorder struct {
 	// fail is how many of the next calls are refused, as a relay that
 	// recovers would.
 	fail int
+	// onNotify, if set, runs before each call; a test uses it to cancel the
+	// run's context mid-way, as a shutdown does.
+	onNotify func()
 }
 
 func (r *recorder) Notify(_ context.Context, m Message) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.onNotify != nil {
+		r.onNotify()
+	}
 	if r.err != nil {
 		return r.err
 	}
@@ -336,11 +343,18 @@ func TestReminderRetriesAfterFailure(t *testing.T) {
 	r := NewReminder(s, rec, "https://portal", []int{3})
 	ctx := context.Background()
 
+	failures := func() float64 {
+		return metricstest.Counter(t, "keyosk_job_item_failures_total", `task="expiry_reminder"`)
+	}
+	before := failures()
 	if err := r.Run(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if rec.count() != 0 {
 		t.Fatal("recorder should have captured nothing while failing")
+	}
+	if got := failures() - before; got != 1 {
+		t.Errorf("item failures rose by %v after a failed notice, want 1", got)
 	}
 
 	// Relay recovers; the notice must still be pending.
@@ -350,6 +364,30 @@ func TestReminderRetriesAfterFailure(t *testing.T) {
 	}
 	if rec.count() != 1 {
 		t.Fatalf("notice not retried after failure: sent %d", rec.count())
+	}
+}
+
+// A shutdown mid-run ends the run with the context's error and counts none of
+// the notices it cut off as failures; a restart must not look like a relay
+// that keeps refusing.
+func TestReminderStopsOnCancelWithoutCountingFailures(t *testing.T) {
+	s, _ := setup(t, "rem-cancel")
+	addKey(t, s, "u1", "u1@uni.de", 2)
+	addKey(t, s, "u2", "u2@uni.de", 2)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	rec := &recorder{err: errors.New("connection closed"), onNotify: cancel}
+	before := metricstest.Counter(t, "keyosk_job_item_failures_total", `task="expiry_reminder"`)
+	err := NewReminder(s, rec, "https://portal", []int{3}).Run(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("Run = %v, want context.Canceled", err)
+	}
+	if got := metricstest.Counter(t, "keyosk_job_item_failures_total", `task="expiry_reminder"`) - before; got != 0 {
+		t.Errorf("item failures rose by %v during shutdown, want 0", got)
+	}
+	if rec.count() != 0 {
+		t.Errorf("sent %d notices after the cancel, want 0", rec.count())
 	}
 }
 

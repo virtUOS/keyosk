@@ -236,12 +236,16 @@ func TestFailedKeyIsRetriedOnTheNextRun(t *testing.T) {
 	bad, good := f.addKey(t, "bad"), f.addKey(t, "good")
 	f.gw.setFailing(bad, true)
 
+	before := metricstest.Counter(t, "keyosk_job_item_failures_total", `task="limit_sync"`)
 	res, err := New(f.store, f.gw, plainUser, 1).Run(f.ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if res.Synced != 1 || res.Failed != 1 {
 		t.Errorf("result = %+v, want 1 synced and 1 failed", res)
+	}
+	if got := metricstest.Counter(t, "keyosk_job_item_failures_total", `task="limit_sync"`) - before; got != 1 {
+		t.Errorf("item failures rose by %v after a failed push, want 1", got)
 	}
 	if f.gw.pushCount(bad) != 1 || f.gw.pushCount(good) != 1 {
 		t.Errorf("pushes bad/good = %d/%d, want 1/1", f.gw.pushCount(bad), f.gw.pushCount(good))

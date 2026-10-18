@@ -88,15 +88,26 @@ var (
 	jobLastSuccess = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "keyosk_job_last_success_timestamp_seconds",
 		Help: "When each background job last ran without error, in Unix seconds; the time the job started until it first succeeds.",
-	}, []string{"job"})
+	}, []string{"task"})
 
 	jobInterval = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "keyosk_job_interval_seconds",
 		Help: "How often each background job is scheduled to run.",
-	}, []string{"job"})
+	}, []string{"task"})
+
+	// jobItemFailures counts what a run could not get done and leaves for the
+	// next run: a notice not sent, an assignment not reverted, limits not
+	// pushed. The run itself still counts as a success, so this is the alarm
+	// for a mail relay or gateway that keeps refusing.
+	jobItemFailures = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "keyosk_job_item_failures_total",
+		Help: "Items a background job could not process and retries on its next run, by task.",
+	}, []string{"task"})
 )
 
-// The background jobs, as the label values of the job metrics.
+// The background jobs, as the values of the task label of the job metrics.
+// The label is not called job: Prometheus stamps its own job label on every
+// scraped series and renames a clashing one to exported_job.
 const (
 	JobExpiryReminder = "expiry_reminder"
 	JobProfileExpiry  = "profile_expiry"
@@ -118,6 +129,13 @@ func JobSucceeded(job string) {
 	jobLastSuccess.WithLabelValues(job).SetToCurrentTime()
 }
 
+// JobItemFailed counts one item a run of the job could not process. The run
+// goes on, still counts as a success when it gets through, and the next run
+// retries the item.
+func JobItemFailed(job string) {
+	jobItemFailures.WithLabelValues(job).Inc()
+}
+
 // init pre-registers the label combinations so each series exists at zero from
 // startup. A CounterVec otherwise emits nothing until first use, which makes a
 // dashboard panel read "no data" whether Keyosk is idle or broken.
@@ -129,6 +147,10 @@ func init() {
 	}
 	for _, source := range []string{SourceDashboard, SourceExtend, SourceSync} {
 		KeysMarkedMissing.WithLabelValues(source)
+	}
+	// Session cleanup has no items; it either runs or fails as a whole.
+	for _, job := range []string{JobExpiryReminder, JobProfileExpiry, JobLimitSync} {
+		jobItemFailures.WithLabelValues(job)
 	}
 	prometheus.MustRegister(missingKeys{prometheus.NewDesc("keyosk_keys_missing",
 		"Keys marked as missing from the gateway, waiting out the grace period.", nil, nil)})
