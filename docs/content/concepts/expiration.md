@@ -16,11 +16,16 @@ without needing to be regenerated.
 Keys expire, so users are warned before they do — otherwise a key dies silently
 in someone's pipeline.
 
-- The dashboard shows a warning once a key is within 14 days of expiring, and
-  an error once it has expired.
+- The dashboard shows a warning once a key is within the widest email
+  threshold that applies to it (see below), and an error once it has expired.
 - With `SMTP_HOST` set, an email goes out at 14, 3 and 1 days before expiry.
   Each notice is sent at most once per key and threshold; a delivery failure
   leaves it pending so the next run retries.
+- A notice is skipped when its threshold is not under 80% of the time the key
+  was valid for when it was created or last extended: the user has just seen
+  the date. A 14-day key gets the 3- and 1-day notices, a 30-day key all three.
+- A key gets at most one notice at a time. When several are due together, for
+  instance after Keyosk was down, only the most urgent goes out.
 - The notice is bilingual, German first: nothing records a per-user language,
   so it cannot pick one. Both halves carry the expiry date and the Keyosk link.
 

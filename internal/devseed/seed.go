@@ -79,7 +79,7 @@ func Seed(ctx context.Context, inst *Instance, out io.Writer) (*Manifest, error)
 		{"assigning them", s.assign},
 		{"generating keys and sending requests", s.keys},
 		{"waiting for LiteLLM to record the spend", s.waitForSpend},
-		{"expiring a key and an assignment", s.backdate},
+		{"backdating keys and an assignment", s.backdate},
 		{"marking the missing key", s.markMissing},
 	}
 	for _, step := range steps {
@@ -376,14 +376,26 @@ func resetSince(w keyprovider.WindowUsage, t time.Time) bool {
 	return !w.ResetsAt.IsZero() && w.ResetsAt.Add(-period).After(t)
 }
 
-// backdate writes, with the server stopped, the two states nobody can reach
-// from the app's pages, and starts the server again.
+// backdate writes, with the server stopped, the states nobody can reach from
+// the app's pages because they take time, and starts the server again.
 func (s *seeder) backdate(ctx context.Context) error {
 	if err := s.inst.Stop(); err != nil {
 		return err
 	}
 	now := time.Now()
 	for _, p := range Personas {
+		if p.ExpiringKey {
+			k, err := s.key(ctx, p.Sub)
+			if err != nil {
+				return err
+			}
+			// Far enough into a 30-day key for the dashboard to warn and the
+			// 3-day reminder to go out when the server starts again.
+			if err := s.store.SetAPIKeyExpiry(ctx, k.ID,
+				now.AddDate(0, 0, -28), now.AddDate(0, 0, 2)); err != nil {
+				return err
+			}
+		}
 		if p.ExpiredKey {
 			k, err := s.key(ctx, p.Sub)
 			if err != nil {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -21,6 +23,9 @@ type recorder struct {
 	mu   sync.Mutex
 	sent []Message
 	err  error
+	// fail is how many of the next calls are refused, as a relay that
+	// recovers would.
+	fail int
 }
 
 func (r *recorder) Notify(_ context.Context, m Message) error {
@@ -28,6 +33,10 @@ func (r *recorder) Notify(_ context.Context, m Message) error {
 	defer r.mu.Unlock()
 	if r.err != nil {
 		return r.err
+	}
+	if r.fail > 0 {
+		r.fail--
+		return errors.New("relay down")
 	}
 	r.sent = append(r.sent, m)
 	return nil
@@ -54,7 +63,8 @@ func setup(t *testing.T, name string) *database.Store {
 	return s
 }
 
-// addKey creates a user with a key expiring in the given number of days.
+// addKey creates a user with a 30-day key expiring in the given number of
+// days, long enough for every default threshold to apply.
 func addKey(t *testing.T, s *database.Store, sub, email string, inDays int) *database.APIKey {
 	t.Helper()
 	ctx := context.Background()
@@ -69,7 +79,39 @@ func addKey(t *testing.T, s *database.Store, sub, email string, inDays int) *dat
 	if err := s.ReplaceAPIKey(ctx, k); err != nil {
 		t.Fatal(err)
 	}
+	setRemaining(t, s, k.ID, time.Duration(inDays)*24*time.Hour, 30)
 	return k
+}
+
+// setRemaining moves a key to the point in its life where left remains of a
+// validity of validDays, as if time had passed since its expiry was set.
+func setRemaining(t *testing.T, s *database.Store, keyID int64, left time.Duration, validDays int) {
+	t.Helper()
+	expires := time.Now().Add(left)
+	if err := s.ExecRaw(context.Background(),
+		`UPDATE api_keys SET expires_at = ?, expiry_set_at = ? WHERE id = ?`,
+		expires, expires.AddDate(0, 0, -validDays), keyID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// pending reports which of the default thresholds the reminder would still
+// consider for the key, that is, have no notice recorded.
+func pending(t *testing.T, s *database.Store, keyID int64) []int {
+	t.Helper()
+	var due []int
+	for _, d := range DefaultThresholds {
+		keys, err := s.KeysExpiringWithin(context.Background(), d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, k := range keys {
+			if k.ID == keyID {
+				due = append(due, d)
+			}
+		}
+	}
+	return due
 }
 
 func TestReminderWarnsKeysInsideWindow(t *testing.T) {
@@ -83,8 +125,8 @@ func TestReminderWarnsKeysInsideWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if rec.count() != 2 {
-		t.Fatalf("sent %d messages, want 2 (14d and 3d for the soon key)", rec.count())
+	if rec.count() != 1 {
+		t.Fatalf("sent %d messages, want 1 (3d for the soon key)", rec.count())
 	}
 	for _, m := range rec.sent {
 		if m.To != "soon@uni.de" {
@@ -135,18 +177,133 @@ func TestReminderWarnsAgainAfterExtension(t *testing.T) {
 	if err := r.Run(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if rec.count() != 2 {
-		t.Fatalf("sent %d messages before the extension, want 2 (14d and 3d)", rec.count())
+	if rec.count() != 1 {
+		t.Fatalf("sent %d messages before the extension, want 1 (3d)", rec.count())
 	}
 
-	if err := s.UpdateAPIKeyExpiry(ctx, k.ID, time.Now().AddDate(0, 0, 2)); err != nil {
+	if err := s.UpdateAPIKeyExpiry(ctx, k.ID, time.Now().AddDate(0, 0, 30)); err != nil {
 		t.Fatal(err)
 	}
+	// The new period runs down to 2 days left.
+	setRemaining(t, s, k.ID, 2*24*time.Hour, 30)
 	if err := r.Run(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if rec.count() != 4 {
-		t.Fatalf("sent %d messages after the extension, want 4 (14d and 3d again)", rec.count())
+	if rec.count() != 2 {
+		t.Fatalf("sent %d messages after the extension, want 2 (3d again)", rec.count())
+	}
+}
+
+// Someone who has just extended a key has seen the new date and needs no
+// notice about it, although the key is inside the 14-day window.
+func TestReminderSkipsNoticeRightAfterExtension(t *testing.T) {
+	s := setup(t, "rem8")
+	k := addKey(t, s, "u1", "u1@uni.de", 2)
+	ctx := context.Background()
+	if err := s.UpdateAPIKeyExpiry(ctx, k.ID, time.Now().AddDate(0, 0, 14)); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := &recorder{}
+	if err := NewReminder(s, rec, "https://portal", nil).Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if rec.count() != 0 {
+		t.Fatalf("sent %d messages right after the extension, want none", rec.count())
+	}
+}
+
+// A threshold applies only when it is well inside the key's validity: a 14-day
+// key gets the 3- and 1-day notices, a 30-day key all three, each once.
+func TestReminderSendsThresholdsTheValidityAllows(t *testing.T) {
+	for _, tc := range []struct {
+		valid int
+		want  []string
+	}{
+		{14, []string{"in 3 days", "tomorrow"}},
+		{30, []string{"in 14 days", "in 3 days", "tomorrow"}},
+	} {
+		t.Run(fmt.Sprintf("%dd", tc.valid), func(t *testing.T) {
+			s := setup(t, fmt.Sprintf("rem9-%d", tc.valid))
+			k := addKey(t, s, "u1", "u1@uni.de", tc.valid)
+			rec := &recorder{}
+			r := NewReminder(s, rec, "https://portal", nil)
+
+			// Run at creation and at each threshold, as time passes.
+			for _, left := range []time.Duration{
+				time.Duration(tc.valid) * 24 * time.Hour,
+				13 * 24 * time.Hour, 2 * 24 * time.Hour, 12 * time.Hour,
+			} {
+				setRemaining(t, s, k.ID, left, tc.valid)
+				if err := r.Run(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			var got []string
+			for _, m := range rec.sent {
+				for _, w := range []string{"in 14 days", "in 3 days", "tomorrow"} {
+					if strings.Contains(m.Subject, w) {
+						got = append(got, w)
+					}
+				}
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("notices = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// A key inside several windows at once, for instance after downtime, gets
+// only the most urgent notice, and the wider ones are not sent later.
+func TestReminderSendsOnlyTheNarrowestDueNotice(t *testing.T) {
+	s := setup(t, "rem10")
+	k := addKey(t, s, "u1", "u1@uni.de", 30)
+	setRemaining(t, s, k.ID, 12*time.Hour, 30)
+
+	rec := &recorder{}
+	r := NewReminder(s, rec, "https://portal", nil)
+	ctx := context.Background()
+	for i := 0; i < 2; i++ {
+		if err := r.Run(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if rec.count() != 1 {
+		t.Fatalf("sent %d messages, want 1", rec.count())
+	}
+	if !strings.Contains(rec.sent[0].Subject, "tomorrow") {
+		t.Errorf("subject = %q, want the 1-day notice", rec.sent[0].Subject)
+	}
+	if p := pending(t, s, k.ID); len(p) != 0 {
+		t.Errorf("notices still pending: %v, want all recorded", p)
+	}
+}
+
+// When the most urgent notice fails, the wider ones must not go out instead,
+// and nothing is recorded, so the next run retries the urgent one.
+func TestReminderRetriesTheNarrowestNoticeAfterFailure(t *testing.T) {
+	s := setup(t, "rem11")
+	k := addKey(t, s, "u1", "u1@uni.de", 30)
+	setRemaining(t, s, k.ID, 12*time.Hour, 30)
+
+	rec := &recorder{err: errors.New("relay down")}
+	r := NewReminder(s, rec, "https://portal", nil)
+	ctx := context.Background()
+	if err := r.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if p := pending(t, s, k.ID); !slices.Equal(p, []int{14, 3, 1}) {
+		t.Errorf("pending after failure = %v, want all three", p)
+	}
+
+	rec.err = nil
+	if err := r.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if rec.count() != 1 || !strings.Contains(rec.sent[0].Subject, "tomorrow") {
+		t.Fatalf("sent %+v after recovery, want the 1-day notice only", rec.sent)
 	}
 }
 
@@ -246,5 +403,37 @@ func TestReminderMessageIsBilingual(t *testing.T) {
 	// Both halves must still carry the facts the user needs to act.
 	if strings.Count(m.Body, "https://portal") < 2 {
 		t.Error("portal link should appear in both halves")
+	}
+}
+
+// When the most urgent notice fails and the relay recovers within the same
+// run, no wider notice goes out in its place; the next run sends the urgent
+// one.
+func TestReminderSendsNoWiderNoticeInPlaceOfAFailedOne(t *testing.T) {
+	s := setup(t, "rem12")
+	k := addKey(t, s, "u1", "u1@uni.de", 30)
+	setRemaining(t, s, k.ID, 12*time.Hour, 30)
+
+	rec := &recorder{fail: 1}
+	r := NewReminder(s, rec, "https://portal", nil)
+	ctx := context.Background()
+	if err := r.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if rec.count() != 0 {
+		t.Fatalf("sent %+v in the run where the 1-day notice failed, want none", rec.sent)
+	}
+	if p := pending(t, s, k.ID); !slices.Equal(p, []int{14, 3, 1}) {
+		t.Errorf("pending after failure = %v, want all three", p)
+	}
+
+	if err := r.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if rec.count() != 1 || !strings.Contains(rec.sent[0].Subject, "tomorrow") {
+		t.Fatalf("sent %+v after recovery, want the 1-day notice only", rec.sent)
+	}
+	if p := pending(t, s, k.ID); len(p) != 0 {
+		t.Errorf("notices still pending: %v, want all recorded", p)
 	}
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/virtuos/keyosk/internal/i18n"
 	"github.com/virtuos/keyosk/internal/keyprovider"
 	"github.com/virtuos/keyosk/internal/metrics"
+	"github.com/virtuos/keyosk/internal/notify"
 	oidcpkg "github.com/virtuos/keyosk/internal/oidc"
 	"github.com/virtuos/keyosk/internal/session"
 	"github.com/virtuos/keyosk/web"
@@ -578,13 +579,24 @@ func daysUntilExpiry(k *database.APIKey) int {
 	return int(time.Until(k.ExpiresAt).Hours() / 24)
 }
 
-// isExpiryUrgent marks the point where the dashboard nags rather than informs.
-// It matches the widest email threshold so both channels agree.
+// isExpiryUrgent marks the point where the dashboard nags rather than informs:
+// the widest email threshold that applies to the key, so both channels agree.
+// A short key skips the wider thresholds, as its mails do. An expired key is
+// always urgent.
 func isExpiryUrgent(k *database.APIKey) bool {
 	if k == nil {
 		return false
 	}
-	return time.Until(k.ExpiresAt) < 14*24*time.Hour
+	left := time.Until(k.ExpiresAt)
+	if left <= 0 {
+		return true
+	}
+	for _, days := range notify.DefaultThresholds {
+		if notify.Relevant(k, days) && left < time.Duration(days)*24*time.Hour {
+			return true
+		}
+	}
+	return false
 }
 
 func profileName(p *database.Profile) string {
