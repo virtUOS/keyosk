@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"mime"
 	"mime/quotedprintable"
@@ -124,20 +125,23 @@ func TestBuildMessageRefusesALineBreakInAnAddress(t *testing.T) {
 type fakeRelay struct {
 	addr string
 
+	// replies overrides the answer to a command, by verb.
+	replies map[string]string
+
 	mu   sync.Mutex
 	from string
 	to   []string
 	data []byte
 }
 
-func newFakeRelay(t *testing.T) *fakeRelay {
+func newFakeRelay(t *testing.T, replies map[string]string) *fakeRelay {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { ln.Close() })
-	r := &fakeRelay{addr: ln.Addr().String()}
+	r := &fakeRelay{addr: ln.Addr().String(), replies: replies}
 	go func() {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -159,7 +163,12 @@ func (r *fakeRelay) serve(conn net.Conn) {
 			return
 		}
 		cmd := strings.TrimRight(line, "\r\n")
-		switch verb := strings.ToUpper(strings.SplitN(cmd, " ", 2)[0]); verb {
+		verb := strings.ToUpper(strings.SplitN(cmd, " ", 2)[0])
+		if v, ok := r.replies[verb]; ok {
+			reply(v)
+			continue
+		}
+		switch verb {
 		case "EHLO", "HELO":
 			reply("250 relay")
 		case "MAIL":
@@ -201,7 +210,7 @@ func (r *fakeRelay) serve(conn net.Conn) {
 // Notify hands the message to the relay with the right envelope, and it
 // arrives intact.
 func TestNotifyDeliversThroughTheRelay(t *testing.T) {
-	relay := newFakeRelay(t)
+	relay := newFakeRelay(t, nil)
 	msg := expiryNotice()
 
 	s := &SMTP{Host: relay.addr, From: "noreply@uni-osnabrueck.de"}
@@ -239,5 +248,75 @@ func TestNotifyReportsAnUnreachableRelay(t *testing.T) {
 	s := &SMTP{Host: addr, From: "noreply@uni-osnabrueck.de"}
 	if err := s.Notify(context.Background(), expiryNotice()); err == nil {
 		t.Error("Notify reported success with no relay listening")
+	}
+}
+
+// A permanent refusal of the recipient is ErrRejected, so the reminder stops
+// retrying it. A temporary one, or a full mailbox, is not.
+func TestNotifyReportsARejectedRecipient(t *testing.T) {
+	for _, tc := range []struct {
+		reply    string
+		rejected bool
+	}{
+		{"550 5.1.1 user unknown", true},
+		{"553 5.1.3 mailbox name not allowed", true},
+		{"552 5.2.2 mailbox full", false},
+		{"450 4.2.0 try again later", false},
+	} {
+		t.Run(tc.reply, func(t *testing.T) {
+			relay := newFakeRelay(t, map[string]string{"RCPT": tc.reply})
+			s := &SMTP{Host: relay.addr, From: "noreply@uni-osnabrueck.de"}
+			err := s.Notify(context.Background(), expiryNotice())
+			if err == nil {
+				t.Fatal("Notify reported success for a refused recipient")
+			}
+			if got := errors.Is(err, ErrRejected); got != tc.rejected {
+				t.Errorf("errors.Is(%v, ErrRejected) = %v, want %v", err, got, tc.rejected)
+			}
+		})
+	}
+}
+
+// A refused sender means the relay is misconfigured, not that the recipient
+// is gone: it must stay retried, or every notice would be dropped.
+func TestNotifyRetriesARefusedSender(t *testing.T) {
+	relay := newFakeRelay(t, map[string]string{"MAIL": "554 5.7.1 relay access denied"})
+	s := &SMTP{Host: relay.addr, From: "noreply@uni-osnabrueck.de"}
+	err := s.Notify(context.Background(), expiryNotice())
+	if err == nil {
+		t.Fatal("Notify reported success for a refused sender")
+	}
+	if errors.Is(err, ErrRejected) {
+		t.Errorf("refused sender reported as ErrRejected: %v", err)
+	}
+}
+
+// A relay that accepts the connection and then says nothing does not hold
+// Notify past the caller's deadline.
+func TestNotifyGivesUpOnAHungRelay(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		_, _ = io.Copy(io.Discard, conn)
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	s := &SMTP{Host: ln.Addr().String(), From: "noreply@uni-osnabrueck.de"}
+	start := time.Now()
+	err = s.Notify(ctx, expiryNotice())
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("Notify = %v, want context.DeadlineExceeded", err)
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Errorf("Notify took %v after the deadline", d)
 	}
 }

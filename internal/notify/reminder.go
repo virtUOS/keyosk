@@ -2,6 +2,7 @@ package notify
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -56,7 +57,14 @@ func (r *Reminder) Run(ctx context.Context) error {
 				continue
 			}
 			msg := r.message(k, days)
-			if err := r.notifier.Notify(ctx, msg); err != nil {
+			err := r.notifier.Notify(ctx, msg)
+			switch {
+			case errors.Is(err, ErrRejected):
+				// The relay would refuse it again on every run until the key
+				// expires, so record it as done.
+				slog.Warn("expiry notice rejected by the relay, not retrying",
+					"email", k.Email, "key_prefix", k.KeyPrefix, "days", days, "err", err)
+			case err != nil:
 				// Leave the notice unrecorded so the next run retries.
 				failed[k.ID] = true
 				slog.Error("send expiry notice",

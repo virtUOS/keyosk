@@ -3,13 +3,16 @@ package notify
 import (
 	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"mime"
 	"mime/quotedprintable"
 	"net"
 	"net/mail"
 	"net/smtp"
+	"net/textproto"
 	"strings"
 	"time"
 )
@@ -28,15 +31,14 @@ type SMTP struct {
 
 var _ Notifier = (*SMTP)(nil)
 
+// ErrRejected marks a recipient the relay refused permanently, such as a
+// mailbox that no longer exists. Sending again would be refused the same way.
+var ErrRejected = errors.New("recipient rejected")
+
 func (s *SMTP) Notify(ctx context.Context, msg Message) error {
 	host, _, err := net.SplitHostPort(s.Host)
 	if err != nil {
 		return fmt.Errorf("invalid SMTP host %q: %w", s.Host, err)
-	}
-
-	var auth smtp.Auth
-	if s.Username != "" {
-		auth = smtp.PlainAuth("", s.Username, s.Password, host)
 	}
 
 	body, err := buildMessage(s.From, msg, time.Now())
@@ -44,32 +46,89 @@ func (s *SMTP) Notify(ctx context.Context, msg Message) error {
 		return err
 	}
 
-	// smtp.SendMail has no context support, so bound it ourselves rather than
-	// letting a hung relay stall the caller indefinitely.
-	done := make(chan error, 1)
-	go func() {
-		done <- smtp.SendMail(s.Host, auth, s.From, []string{msg.To}, body)
-	}()
-
-	select {
-	case err := <-done:
-		if err != nil {
-			return fmt.Errorf("send mail to %s: %w", msg.To, err)
+	// Bound the whole exchange so a hung relay cannot stall the caller.
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err := s.send(ctx, host, msg.To, body); err != nil {
+		if ctx.Err() != nil {
+			err = ctx.Err()
 		}
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-time.After(30 * time.Second):
-		return fmt.Errorf("send mail to %s: timed out", msg.To)
+		return fmt.Errorf("send mail to %s: %w", msg.To, err)
 	}
+	return nil
+}
+
+// send does what smtp.SendMail does, step by step, so that a refusal of the
+// recipient can be told apart from one of the sender or the login. Those mean
+// the relay is misconfigured, and must stay retried.
+func (s *SMTP) send(ctx context.Context, host, to string, body []byte) error {
+	var d net.Dialer
+	conn, err := d.DialContext(ctx, "tcp", s.Host)
+	if err != nil {
+		return err
+	}
+	// smtp.Client has no context support; unblock it when ctx ends.
+	stop := context.AfterFunc(ctx, func() { _ = conn.SetDeadline(time.Now()) })
+	defer stop()
+
+	c, err := smtp.NewClient(conn, host)
+	if err != nil {
+		conn.Close()
+		return err
+	}
+	defer c.Close()
+
+	if ok, _ := c.Extension("STARTTLS"); ok {
+		if err := c.StartTLS(&tls.Config{ServerName: host}); err != nil {
+			return err
+		}
+	}
+	if s.Username != "" {
+		if ok, _ := c.Extension("AUTH"); !ok {
+			return errors.New("relay does not offer AUTH")
+		}
+		if err := c.Auth(smtp.PlainAuth("", s.Username, s.Password, host)); err != nil {
+			return err
+		}
+	}
+	if err := c.Mail(s.From); err != nil {
+		return err
+	}
+	if err := c.Rcpt(to); err != nil {
+		if permanent(err) {
+			return fmt.Errorf("%w: %w", ErrRejected, err)
+		}
+		return err
+	}
+	w, err := c.Data()
+	if err != nil {
+		return err
+	}
+	if _, err := w.Write(body); err != nil {
+		return err
+	}
+	if err := w.Close(); err != nil {
+		return err
+	}
+	// The relay has accepted the mail. A failed QUIT must not make the
+	// reminder send it again.
+	_ = c.Quit()
+	return nil
+}
+
+// permanent reports whether err is a 5xx reply. RFC 5321 asks for a 552 to a
+// recipient to be read as 452: a full mailbox may empty again.
+func permanent(err error) bool {
+	var tp *textproto.Error
+	return errors.As(err, &tp) && tp.Code >= 500 && tp.Code < 600 && tp.Code != 552
 }
 
 // buildMessage writes msg as an RFC 5322 message.
 //
-// Headers must be ASCII, since smtp.SendMail does not negotiate SMTPUTF8, so
-// the subject is sent as RFC 2047 encoded-words: raw UTF-8 there ("Schlüssel")
-// shows garbled in some clients. The body is quoted-printable for the same
-// reason. Date and Message-ID are set here rather than left to the relay,
+// Headers must be ASCII, since SMTPUTF8 is only used when the relay offers it,
+// so the subject is sent as RFC 2047 encoded-words: raw UTF-8 there
+// ("Schlüssel") shows garbled in some clients. The body is quoted-printable
+// for the same reason. Date and Message-ID are set here rather than left to the relay,
 // because spam filters score their absence.
 func buildMessage(from string, msg Message, now time.Time) ([]byte, error) {
 	// To comes from the identity provider. A line break in it would let it
