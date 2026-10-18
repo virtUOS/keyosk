@@ -487,8 +487,8 @@ textarea { resize: vertical; min-height: 72px; }
 
 /* ── Tables ─────────────────────────────────────────────── */
 /* Cells wrap, so a description or a model list takes a few lines instead of
-   one very long one; what must stay whole (dates, keys, addresses, buttons)
-   is marked .nowrap. On a narrow screen the table keeps a usable width and
+   one very long one; what must stay whole (dates, keys, buttons) is marked
+   .nowrap, and addresses are .clip. On a narrow screen the table keeps a usable width and
    the wrapper scrolls, rather than squeezing every column down to a word. */
 .table-wrap { overflow-x: auto; }
 table {
@@ -520,6 +520,19 @@ td.cell-prose { min-width: 14rem; }
 /* A second, quieter line under a cell's value. */
 .cell-note { display: block; font-size: .8rem; color: var(--text-muted); }
 td.cell-menu { width: 1%; text-align: right; }
+/* An address stays on one line, but an unusually long one would widen its
+   column for every row and squeeze the others into many lines. It is cut
+   off instead; the title shows it whole, and copying takes all of it. */
+.clip {
+  display: block;
+  max-width: 36ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* An identifier is compared character by character, so it wraps rather than
+   being cut off; a long one without hyphens may break anywhere. */
+td.cell-id { overflow-wrap: anywhere; }
 
 /* ── Row menus ──────────────────────────────────────────── */
 /* Every row's actions sit behind one ⋮ button, so the column is the same on
@@ -595,6 +608,7 @@ td.cell-menu { width: 1%; text-align: right; }
   .stack-lg td[data-label] { position: relative; padding-left: 9.75rem; }
   .stack-lg td[data-label]::before { content: attr(data-label); position: absolute; left: 0; width: 9rem; color: var(--text-muted); font-size: .8rem; padding-top: .1rem; }
   .stack-lg td.nowrap { white-space: normal; }
+  .stack-lg .clip { max-width: none; white-space: normal; overflow-wrap: anywhere; }
   .stack-lg td.cell-menu { position: absolute; top: .45rem; right: 0; width: auto; padding: 0; }
 }
 @container (max-width: 48rem) {
@@ -609,6 +623,7 @@ td.cell-menu { width: 1%; text-align: right; }
   .stack-md td[data-label] { position: relative; padding-left: 9.75rem; }
   .stack-md td[data-label]::before { content: attr(data-label); position: absolute; left: 0; width: 9rem; color: var(--text-muted); font-size: .8rem; padding-top: .1rem; }
   .stack-md td.nowrap { white-space: normal; }
+  .stack-md .clip { max-width: none; white-space: normal; overflow-wrap: anywhere; }
   .stack-md td.cell-menu { position: absolute; top: .45rem; right: 0; width: auto; padding: 0; }
 }
 /* On a phone the label goes above its value: beside it, a 9rem label column

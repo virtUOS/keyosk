@@ -46,7 +46,7 @@
           <tbody>
             {{range .Failures}}
             <tr>
-              <td class="nowrap">{{.Email}}</td>
+              <td><span class="clip" title="{{.Email}}">{{.Email}}</span></td>
               <td class="nowrap"><code>{{.KeyPrefix}}…</code></td>
               <td class="cell-prose">{{.Error}}</td>
               <td class="nowrap">{{.FailedAt}}</td>
@@ -259,11 +259,11 @@
             {{$after := .AfterExpiryID}}
             <tr>
               <td>{{.Name}}</td>
-              <td class="nowrap" data-label="{{T $.Lang "admin.col.email"}}">{{.Email}}</td>
+              <td data-label="{{T $.Lang "admin.col.email"}}"><span class="clip" title="{{.Email}}">{{.Email}}</span></td>
               {{/* The subject identifies the person durably, where an address
                    can be reassigned. Shown so an operator can tell accounts
                    apart without querying the database. */}}
-              <td data-label="{{T $.Lang "admin.col.oidcsub"}}">{{.OIDCSub}}</td>
+              <td class="cell-id" data-label="{{T $.Lang "admin.col.oidcsub"}}">{{.OIDCSub}}</td>
               <td data-label="{{T $.Lang "admin.col.profile"}}">
                 {{if .Profile}}{{.Profile.Name}}
                 {{else}}{{$defaultName}}<span class="cell-note">{{T $.Lang "admin.default.follows"}}</span>{{end}}
@@ -396,8 +396,8 @@
             {{range .Admins}}
             <tr>
               <td>{{.Name}}{{if .IsSelf}} <span class="badge">{{T $.Lang "admin.admins.self"}}</span>{{end}}</td>
-              <td class="nowrap" data-label="{{T $.Lang "admin.col.email"}}">{{.Email}}</td>
-              <td data-label="{{T $.Lang "admin.col.oidcsub"}}">{{.OIDCSub}}</td>
+              <td data-label="{{T $.Lang "admin.col.email"}}"><span class="clip" title="{{.Email}}">{{.Email}}</span></td>
+              <td class="cell-id" data-label="{{T $.Lang "admin.col.oidcsub"}}">{{.OIDCSub}}</td>
               {{/* With the login system deciding there is nothing to do on a
                    row, so there is no menu at all. */}}
               {{if not $.AdminGroup}}
@@ -480,8 +480,8 @@
             <tr>
               <td class="nowrap">{{.CreatedAt.Format "2006-01-02 15:04"}}</td>
               <td class="nowrap" data-label="{{T $.Lang "admin.col.action"}}"><code>{{.Action}}</code></td>
-              <td class="nowrap" data-label="{{T $.Lang "admin.col.actor"}}">{{.ActorEmail}}</td>
-              <td class="nowrap" data-label="{{T $.Lang "admin.col.subject"}}">{{.SubjectEmail}}</td>
+              <td data-label="{{T $.Lang "admin.col.actor"}}"><span class="clip" title="{{.ActorEmail}}">{{.ActorEmail}}</span></td>
+              <td data-label="{{T $.Lang "admin.col.subject"}}"><span class="clip" title="{{.SubjectEmail}}">{{.SubjectEmail}}</span></td>
               <td class="cell-prose text-muted" data-label="{{T $.Lang "admin.col.detail"}}">{{.Detail}}</td>
             </tr>
             {{else}}
