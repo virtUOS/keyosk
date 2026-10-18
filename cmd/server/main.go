@@ -128,6 +128,15 @@ func main() {
 	if err := store.DeleteExpiredSessions(ctx); err != nil {
 		slog.Error("cleanup sessions", "err", err)
 	}
+	// The default profile created on the first start has no quota, so
+	// everyone without a profile of their own spends without a cap until an
+	// admin limits it. The admin panel says so too, but nobody may have
+	// opened it yet.
+	if def, err := store.GetDefaultProfile(ctx); err != nil {
+		slog.Error("read default profile", "err", err)
+	} else if len(def.Quotas) == 0 {
+		slog.Warn("the default profile has no usage limit: every user without a profile of their own can spend without a cap; set a quota in the admin panel", "profile", def.Name)
+	}
 
 	// An operator who still sets a setting an older version read would
 	// otherwise not know it has no effect. Admin rights in particular are

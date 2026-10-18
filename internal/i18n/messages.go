@@ -196,10 +196,13 @@ var messages = map[string]map[Lang]string{
 	"admin.default.follow":  {DE: "Standardprofil folgen", EN: "Follow the default"},
 	"admin.default.current": {DE: "(derzeit: %s)", EN: "(currently: %s)"},
 	"admin.default.follows": {DE: "folgt dem Standardprofil", EN: "follows the default"},
-	"admin.edit":            {DE: "Bearbeiten", EN: "Edit"},
-	"admin.delete":          {DE: "Löschen", EN: "Delete"},
-	"admin.revoke.key":      {DE: "Schlüssel widerrufen", EN: "Revoke key"},
-	"admin.actions":         {DE: "Aktionen", EN: "Actions"},
+	// The notice at the top of the panel while the default has no quota.
+	"admin.default.unlimited.title": {DE: "Das Standardprofil ist unbegrenzt", EN: "The default profile is unlimited"},
+	"admin.default.unlimited.body":  {DE: "Das Standardprofil „%s“ hat kein Nutzungslimit, daher können alle Nutzenden ohne eigenes Profil unbegrenzt Kosten verursachen. Geben Sie ihm ein Limit oder machen Sie ein begrenztes Profil zum Standard.", EN: "The default profile %q has no usage limit, so every user without a profile of their own can spend without a cap. Give it a limit or make a limited profile the default."},
+	"admin.edit":                    {DE: "Bearbeiten", EN: "Edit"},
+	"admin.delete":                  {DE: "Löschen", EN: "Delete"},
+	"admin.revoke.key":              {DE: "Schlüssel widerrufen", EN: "Revoke key"},
+	"admin.actions":                 {DE: "Aktionen", EN: "Actions"},
 	// Why a menu entry is greyed out, shown under it.
 	"admin.delete.default":   {DE: "Das Standardprofil kann nicht gelöscht werden.", EN: "The default profile cannot be deleted."},
 	"admin.revoke.nokey":     {DE: "Kein Schlüssel vorhanden.", EN: "There is no key."},
