@@ -347,6 +347,30 @@ func TestReminderRetriesAfterFailure(t *testing.T) {
 	}
 }
 
+// A recipient the relay refuses permanently is recorded, so later runs do not
+// try it again until the key expires.
+func TestReminderDoesNotRetryARejectedRecipient(t *testing.T) {
+	s := setup(t, "rem-rejected")
+	addKey(t, s, "u1", "u1@uni.de", 2)
+
+	rec := &recorder{err: fmt.Errorf("send mail to u1@uni.de: %w: 550 user unknown", ErrRejected)}
+	r := NewReminder(s, rec, "https://portal", []int{3})
+	ctx := context.Background()
+
+	if err := r.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	// Were the notice still pending, this run would deliver it.
+	rec.err = nil
+	if err := r.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if rec.count() != 0 {
+		t.Fatalf("rejected notice was retried: sent %d", rec.count())
+	}
+}
+
 func TestReminderMessageWording(t *testing.T) {
 	s := setup(t, "rem5")
 	addKey(t, s, "u1", "u1@uni.de", 1)
