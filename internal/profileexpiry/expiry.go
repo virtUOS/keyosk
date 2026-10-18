@@ -45,7 +45,8 @@ func NewRunner(store *database.Store, keys gateway, kick func()) *Runner {
 //
 // Safe to call repeatedly: applying an expiry clears the deadline, so a second
 // run finds nothing. One user's failure does not stop the others — a gateway
-// blip must not leave the rest of the batch un-reverted.
+// blip must not leave the rest of the batch un-reverted. A cancelled ctx ends
+// the run with its error; the users left over are not failures.
 func (r *Runner) Run(ctx context.Context) error {
 	users, err := r.store.UsersWithPassedDeadline(ctx, time.Now())
 	if err != nil {
@@ -53,6 +54,9 @@ func (r *Runner) Run(ctx context.Context) error {
 	}
 	switched := false
 	for i := range users {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		u := &users[i]
 		var err error
 		if u.RevokeKeyAtExpiry {
@@ -62,7 +66,11 @@ func (r *Runner) Run(ctx context.Context) error {
 			switched = switched || err == nil
 		}
 		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			slog.Error("revert expired profile", "user_id", u.ID, "err", err)
+			metrics.JobItemFailed(metrics.JobProfileExpiry)
 		}
 	}
 	if switched && r.kick != nil {

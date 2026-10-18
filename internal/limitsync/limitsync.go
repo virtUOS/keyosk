@@ -411,6 +411,7 @@ func (s *Syncer) fail(ctx context.Context, t database.LimitSyncTarget, reason st
 		reason = reason[:maxErrorLen] + "…"
 	}
 	slog.Warn("limit sync failed", "key_prefix", t.KeyPrefix, "user", t.Email, "err", reason)
+	metrics.JobItemFailed(metrics.JobLimitSync)
 	if err := s.store.MarkLimitSyncFailed(ctx, t.KeyID, reason, time.Now()); err != nil {
 		if ctx.Err() != nil {
 			return nil

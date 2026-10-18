@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -301,6 +302,7 @@ func TestRunKeepsTheDeadlineWhenTheGatewayFails(t *testing.T) {
 	fake := keyprovider.NewFake()
 	fake.DeleteErr = errors.New("gateway unavailable")
 	// The run reports the failure but must not panic or abort the batch.
+	before := metricstest.Counter(t, "keyosk_job_item_failures_total", `task="profile_expiry"`)
 	_ = NewRunner(store, fake, nil).Run(ctx)
 
 	got, err := store.GetUserByID(ctx, u.ID)
@@ -309,6 +311,57 @@ func TestRunKeepsTheDeadlineWhenTheGatewayFails(t *testing.T) {
 	}
 	if got.ProfileExpiresAt == nil {
 		t.Error("deadline cleared despite the upstream delete failing; the next run cannot retry")
+	}
+	if n := metricstest.Counter(t, "keyosk_job_item_failures_total", `task="profile_expiry"`) - before; n != 1 {
+		t.Errorf("item failures rose by %v after a failed reversion, want 1", n)
+	}
+}
+
+// A shutdown mid-run ends the run with the context's error and counts none of
+// the users it cut off as failures; a restart must not look like a gateway
+// that keeps refusing.
+func TestRunStopsOnCancelWithoutCountingFailures(t *testing.T) {
+	store := testStore(t, "job-cancel")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	p := &database.Profile{Name: "raised"}
+	if _, err := store.CreateProfile(ctx, p, nil); err != nil {
+		t.Fatal(err)
+	}
+	yesterday := time.Now().Add(-time.Hour)
+	for i, sub := range []string{"sub-c1", "sub-c2"} {
+		u, err := store.GetOrCreateUser(ctx, sub, sub+"@uni-osnabrueck.de", sub)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := store.ReplaceAPIKey(ctx, &database.APIKey{
+			UserID: u.ID, KeyRef: fmt.Sprintf("sk-cancel-%d", i), KeyPrefix: "sk-ca",
+			ExpiresAt: time.Now().Add(90 * 24 * time.Hour),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.SetUserProfileUntil(ctx, u.ID, &p.ID, &yesterday, nil, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	fake := keyprovider.NewFake()
+	fake.DeleteErr = errors.New("connection closed")
+	fake.OnDelete = cancel
+	before := metricstest.Counter(t, "keyosk_job_item_failures_total", `task="profile_expiry"`)
+	err := NewRunner(store, fake, nil).Run(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("Run = %v, want context.Canceled", err)
+	}
+	if n := metricstest.Counter(t, "keyosk_job_item_failures_total", `task="profile_expiry"`) - before; n != 0 {
+		t.Errorf("item failures rose by %v during shutdown, want 0", n)
+	}
+	users, err := store.UsersWithPassedDeadline(context.Background(), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(users) != 2 {
+		t.Errorf("%d users still pending after the cancel, want 2", len(users))
 	}
 }
 
@@ -330,7 +383,7 @@ func startJob(t *testing.T, store *database.Store, every time.Duration) float64 
 	return metricstest.Gauge(t, "keyosk_job_last_success_timestamp_seconds", jobLabel)
 }
 
-const jobLabel = `job="` + metrics.JobProfileExpiry + `"`
+const jobLabel = `task="` + metrics.JobProfileExpiry + `"`
 
 // Each run that gets through moves the job's last success, which is what an
 // alert on a stuck job watches.

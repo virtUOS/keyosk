@@ -33,8 +33,9 @@ For a quick look, `curl -H "Authorization: Bearer $METRICS_TOKEN" https://…/me
 | `keyosk_keys_missing_removed_total` | marked keys removed after the grace period ran out |
 | `keyosk_active_keys` | keys currently issued |
 | `keyosk_keys_expiring_7d` | keys expiring within a week |
-| `keyosk_job_last_success_timestamp_seconds` | when each background job last ran without error, by `job`; the job's start time until it first succeeds |
-| `keyosk_job_interval_seconds` | how often each background job runs, by `job` |
+| `keyosk_job_last_success_timestamp_seconds` | when each background job last ran without error, by `task`; the job's start time until it first succeeds |
+| `keyosk_job_interval_seconds` | how often each background job runs, by `task` |
+| `keyosk_job_item_failures_total` | notices, reversions or limit pushes a background job could not get done and retries on its next run, by `task` |
 
 The missing-key metrics are the alarm for a Keyosk instance pointed at the
 wrong gateway, or at one restored from a backup. Suggested alerts: a warning
@@ -44,8 +45,8 @@ when `keyosk_keys_missing` stays above zero for an hour, or when
 fires while the grace period (`KEY_MISSING_GRACE_PERIOD`) still lets you
 correct the cause without losing anything.
 
-The job metrics show whether the background jobs still run. The jobs are
-`expiry_reminder` (expiry notices, every 6 hours), `profile_expiry` (reverting
+The job metrics show whether the background jobs still run. The `task` label
+names the job: `expiry_reminder` (expiry notices, every 6 hours), `profile_expiry` (reverting
 temporary profile assignments, every 15 minutes), `limit_sync` (pushing
 profile limits to the gateway, every `LIMIT_SYNC_INTERVAL`) and
 `session_cleanup` (hourly). A run counts as a success when it gets through,
@@ -60,6 +61,24 @@ time() - keyosk_job_last_success_timestamp_seconds > 2 * keyosk_job_interval_sec
 
 Before its first success, a job's timestamp is the time it started, so a job
 that fails from the start alerts as well, without firing on every restart.
+
+A run that gets through with some of its items failing still counts as a
+success, so a mail relay or gateway that keeps refusing does not show up
+there. `keyosk_job_item_failures_total` counts those items. A single failure
+is retried on the next run and needs no attention; suggested is a warning when
+failures keep coming for a day, which clears by itself once the retries get
+through:
+
+```yaml
+- alert: KeyoskJobItemsFailing
+  expr: increase(keyosk_job_item_failures_total[12h]) > 0
+  for: 1d
+```
+
+The range covers two runs of the slowest job and `for` outlasts it, so one
+failed item does not fire; a job that fails something in every half day for a
+whole day does. Without the `for`, or with one shorter than the range, a single
+failure would fire and stay up until it left the range.
 
 ## Health checks
 
