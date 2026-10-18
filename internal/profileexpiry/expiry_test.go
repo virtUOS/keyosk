@@ -13,6 +13,8 @@ import (
 
 	"github.com/virtuos/keyosk/internal/database"
 	"github.com/virtuos/keyosk/internal/keyprovider"
+	"github.com/virtuos/keyosk/internal/metrics"
+	"github.com/virtuos/keyosk/internal/metrics/metricstest"
 )
 
 func testStore(t *testing.T, name string) *database.Store {
@@ -307,5 +309,61 @@ func TestRunKeepsTheDeadlineWhenTheGatewayFails(t *testing.T) {
 	}
 	if got.ProfileExpiresAt == nil {
 		t.Error("deadline cleared despite the upstream delete failing; the next run cannot retry")
+	}
+}
+
+// startJob runs the job every interval until the test ends, and returns its
+// last success as JobStarted set it. A distinct interval per test tells its
+// own start apart from an earlier test's.
+func startJob(t *testing.T, store *database.Store, every time.Duration) float64 {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	t.Cleanup(func() { cancel(); <-done })
+	go func() {
+		NewRunner(store, keyprovider.NewFake(), nil).Start(ctx, every)
+		close(done)
+	}()
+	waitFor(t, func() bool {
+		return metricstest.Gauge(t, "keyosk_job_interval_seconds", jobLabel) == every.Seconds()
+	})
+	return metricstest.Gauge(t, "keyosk_job_last_success_timestamp_seconds", jobLabel)
+}
+
+const jobLabel = `job="` + metrics.JobProfileExpiry + `"`
+
+// Each run that gets through moves the job's last success, which is what an
+// alert on a stuck job watches.
+func TestStartRecordsSuccess(t *testing.T) {
+	started := startJob(t, testStore(t, "job-success"), 10*time.Millisecond)
+	waitFor(t, func() bool {
+		return metricstest.Gauge(t, "keyosk_job_last_success_timestamp_seconds", jobLabel) > started
+	})
+}
+
+// A run that fails leaves the last success where it was.
+func TestStartKeepsLastSuccessOnFailure(t *testing.T) {
+	// Never migrated, so every run fails on its first query.
+	sqldb, err := sql.Open(sqliteshim.ShimName, "file:job-failure?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db := bun.NewDB(sqldb, sqlitedialect.New())
+	t.Cleanup(func() { db.Close() })
+	started := startJob(t, database.NewStore(db), 11*time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
+	if got := metricstest.Gauge(t, "keyosk_job_last_success_timestamp_seconds", jobLabel); got != started {
+		t.Errorf("last success = %v after failing runs, want it left at %v", got, started)
+	}
+}
+
+func waitFor(t *testing.T, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatal("condition not met within 5s")
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }

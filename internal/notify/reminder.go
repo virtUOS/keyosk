@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/virtuos/keyosk/internal/database"
+	"github.com/virtuos/keyosk/internal/metrics"
 )
 
 // DefaultThresholds are how many days before expiry a user is warned.
@@ -95,18 +96,27 @@ func Relevant(k *database.APIKey, days int) bool {
 
 // Start runs the reminder on an interval until ctx is cancelled.
 func (r *Reminder) Start(ctx context.Context, every time.Duration) {
-	// Run once at startup so a restart does not delay overdue notices.
-	if err := r.Run(ctx); err != nil {
-		slog.Error("expiry reminder", "err", err)
+	metrics.JobStarted(metrics.JobExpiryReminder, every)
+	run := func() {
+		err := r.Run(ctx)
+		if ctx.Err() != nil {
+			// Shutting down: a run cut short is neither an error nor a success.
+			return
+		}
+		if err != nil {
+			slog.Error("expiry reminder", "err", err)
+			return
+		}
+		metrics.JobSucceeded(metrics.JobExpiryReminder)
 	}
+	// Run once at startup so a restart does not delay overdue notices.
+	run()
 	t := time.NewTicker(every)
 	defer t.Stop()
 	for {
 		select {
 		case <-t.C:
-			if err := r.Run(ctx); err != nil {
-				slog.Error("expiry reminder", "err", err)
-			}
+			run()
 		case <-ctx.Done():
 			return
 		}

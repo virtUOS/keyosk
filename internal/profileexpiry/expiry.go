@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/virtuos/keyosk/internal/database"
+	"github.com/virtuos/keyosk/internal/metrics"
 )
 
 // gateway is the slice of the key provider this job needs: deleting a key,
@@ -133,18 +134,27 @@ func (r *Runner) destName(ctx context.Context, id *int64) string {
 
 // Start runs the job on an interval until ctx is cancelled.
 func (r *Runner) Start(ctx context.Context, every time.Duration) {
-	// Run once at startup so a restart does not delay an overdue reversion.
-	if err := r.Run(ctx); err != nil {
-		slog.Error("profile expiry run", "err", err)
+	metrics.JobStarted(metrics.JobProfileExpiry, every)
+	run := func() {
+		err := r.Run(ctx)
+		if ctx.Err() != nil {
+			// Shutting down: a run cut short is neither an error nor a success.
+			return
+		}
+		if err != nil {
+			slog.Error("profile expiry run", "err", err)
+			return
+		}
+		metrics.JobSucceeded(metrics.JobProfileExpiry)
 	}
+	// Run once at startup so a restart does not delay an overdue reversion.
+	run()
 	t := time.NewTicker(every)
 	defer t.Stop()
 	for {
 		select {
 		case <-t.C:
-			if err := r.Run(ctx); err != nil {
-				slog.Error("profile expiry run", "err", err)
-			}
+			run()
 		case <-ctx.Done():
 			return
 		}

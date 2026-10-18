@@ -1,4 +1,4 @@
-package metrics
+package metrics_test
 
 import (
 	"context"
@@ -7,13 +7,17 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/virtuos/keyosk/internal/metrics"
+	"github.com/virtuos/keyosk/internal/metrics/metricstest"
 )
 
 // Every key-operation series must exist at zero before any traffic, so a
 // dashboard distinguishes "idle" from "broken".
 func TestKeyOperationSeriesPreRegistered(t *testing.T) {
 	rec := httptest.NewRecorder()
-	Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+	metrics.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
 	body := rec.Body.String()
 	for _, want := range []string{
 		`keyosk_key_operations_total{action="generate",outcome="success"} 0`,
@@ -30,12 +34,12 @@ func TestKeyOperationSeriesPreRegistered(t *testing.T) {
 // configuration problem, so "no data" must never be mistaken for "none"
 // (issue #108).
 func TestMissingKeySeriesPreRegistered(t *testing.T) {
-	CountMissingKeysWith(func(context.Context) (int, error) { return 0, nil })
+	metrics.CountMissingKeysWith(func(context.Context) (int, error) { return 0, nil })
 	rec := httptest.NewRecorder()
-	Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+	metrics.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
 	body := rec.Body.String()
 	var want []string
-	for _, source := range []string{SourceDashboard, SourceExtend, SourceSync} {
+	for _, source := range []string{metrics.SourceDashboard, metrics.SourceExtend, metrics.SourceSync} {
 		want = append(want, `keyosk_keys_marked_missing_total{source="`+source+`"} 0`)
 	}
 	want = append(want,
@@ -54,7 +58,7 @@ func TestMissingKeySeriesPreRegistered(t *testing.T) {
 func TestMissingKeysGaugeCountsOnScrape(t *testing.T) {
 	scrape := func() string {
 		rec := httptest.NewRecorder()
-		Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+		metrics.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
 		if rec.Code != 200 {
 			t.Fatalf("scrape status = %d, want 200", rec.Code)
 		}
@@ -62,7 +66,7 @@ func TestMissingKeysGaugeCountsOnScrape(t *testing.T) {
 	}
 
 	n := 3
-	CountMissingKeysWith(func(context.Context) (int, error) { return n, nil })
+	metrics.CountMissingKeysWith(func(context.Context) (int, error) { return n, nil })
 	if body := scrape(); !strings.Contains(body, "\nkeyosk_keys_missing 3\n") {
 		t.Errorf("gauge does not report 3:\n%s", body)
 	}
@@ -71,7 +75,7 @@ func TestMissingKeysGaugeCountsOnScrape(t *testing.T) {
 		t.Errorf("gauge does not follow the count to 1:\n%s", body)
 	}
 
-	CountMissingKeysWith(func(context.Context) (int, error) { return 0, errors.New("database is locked") })
+	metrics.CountMissingKeysWith(func(context.Context) (int, error) { return 0, errors.New("database is locked") })
 	body := scrape()
 	if strings.Contains(body, "\nkeyosk_keys_missing ") {
 		t.Errorf("gauge reported despite a failed count:\n%s", body)
@@ -86,11 +90,11 @@ func TestMissingKeysGaugeCountsOnScrape(t *testing.T) {
 // spec and easily confused in a query. The Go runtime's own metrics have such
 // pairs; Keyosk's do not.
 func TestOpenMetricsFamiliesAreUnique(t *testing.T) {
-	CountMissingKeysWith(func(context.Context) (int, error) { return 0, nil })
+	metrics.CountMissingKeysWith(func(context.Context) (int, error) { return 0, nil })
 	req := httptest.NewRequest("GET", "/metrics", nil)
 	req.Header.Set("Accept", "application/openmetrics-text; version=1.0.0")
 	rec := httptest.NewRecorder()
-	Handler().ServeHTTP(rec, req)
+	metrics.Handler().ServeHTTP(rec, req)
 	seen := map[string]bool{}
 	for _, line := range strings.Split(rec.Body.String(), "\n") {
 		fields := strings.Fields(line)
@@ -116,7 +120,7 @@ func TestHandlerNegotiatesOpenMetrics(t *testing.T) {
 			req.Header.Set("Accept", tc.accept)
 		}
 		rec := httptest.NewRecorder()
-		Handler().ServeHTTP(rec, req)
+		metrics.Handler().ServeHTTP(rec, req)
 		if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, tc.want) {
 			t.Errorf("Accept %q: Content-Type = %q, want %s", tc.accept, ct, tc.want)
 		}
@@ -128,7 +132,7 @@ func TestHandlerNegotiatesOpenMetrics(t *testing.T) {
 
 // With a token, only a request carrying it as a bearer token gets the metrics.
 func TestRequireToken(t *testing.T) {
-	h := RequireToken("s3cret")(Handler())
+	h := metrics.RequireToken("s3cret")(metrics.Handler())
 	for _, tc := range []struct {
 		auth string
 		want int
@@ -164,8 +168,29 @@ func TestRequireToken(t *testing.T) {
 // Without a token the endpoint stays open, as it was before there was one.
 func TestRequireTokenEmptyLetsEveryoneThrough(t *testing.T) {
 	rec := httptest.NewRecorder()
-	RequireToken("")(Handler()).ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+	metrics.RequireToken("")(metrics.Handler()).ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
 	if rec.Code != http.StatusOK {
 		t.Errorf("no token configured: %d, want 200", rec.Code)
+	}
+}
+
+// A job's last success reads as its start until the first success, so a job
+// that never succeeds alerts like one that stopped, and moves on each success.
+func TestJobLastSuccess(t *testing.T) {
+	const job = "test_job"
+	before := float64(time.Now().UnixNano()) / 1e9
+	metrics.JobStarted(job, 15*time.Minute)
+	if got := metricstest.Gauge(t, "keyosk_job_interval_seconds", `job="test_job"`); got != 900 {
+		t.Errorf("interval = %v, want 900", got)
+	}
+	started := metricstest.Gauge(t, "keyosk_job_last_success_timestamp_seconds", `job="test_job"`)
+	if started < before {
+		t.Errorf("last success after start = %v, want the start time (>= %v)", started, before)
+	}
+
+	time.Sleep(time.Millisecond)
+	metrics.JobSucceeded(job)
+	if got := metricstest.Gauge(t, "keyosk_job_last_success_timestamp_seconds", `job="test_job"`); got <= started {
+		t.Errorf("last success after success = %v, want later than %v", got, started)
 	}
 }

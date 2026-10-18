@@ -270,6 +270,7 @@ func main() {
 	// Expire stale sessions periodically; previously this ran once at startup
 	// and rows accumulated for the lifetime of the process.
 	stopCleanup := make(chan struct{})
+	metrics.JobStarted(metrics.JobSessionCleanup, time.Hour)
 	go func() {
 		t := time.NewTicker(time.Hour)
 		defer t.Stop()
@@ -278,6 +279,8 @@ func main() {
 			case <-t.C:
 				if err := store.DeleteExpiredSessions(context.Background()); err != nil {
 					slog.Error("cleanup sessions", "err", err)
+				} else {
+					metrics.JobSucceeded(metrics.JobSessionCleanup)
 				}
 				refreshGauges()
 			case <-stopCleanup:
