@@ -155,12 +155,20 @@ func (a *Admin) RevokeUserKey(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin?flash=Failed+to+revoke+key+upstream#users", http.StatusFound)
 		return
 	}
-	if err := a.store.DeleteAPIKey(r.Context(), key.ID); err != nil {
-		slog.Error("revoke: delete local key row", "key_id", key.ID, "err", err)
+	// The key is revoked either way, so record that even if the row stays.
+	storeErr := a.store.DeleteAPIKey(r.Context(), key.ID)
+	a.audit(r, database.AuditKeyRevoked, user.Email, &userID, "key "+key.KeyPrefix+recordNote(storeErr))
+	if storeErr != nil {
+		// Revoking again removes the row: the gateway reports a key that is
+		// already gone as deleted.
+		slog.Error("revoke: delete local key row", "key_id", key.ID, "err", storeErr)
+		metrics.KeyOperations.WithLabelValues("revoke", "store_error").Inc()
+		msg := "Key revoked, but Keyosk could not update its records. Revoke it again to remove it from the list."
+		http.Redirect(w, r, "/admin?flash="+url.QueryEscape(msg)+"#users", http.StatusFound)
+		return
 	}
 
 	metrics.KeyOperations.WithLabelValues("revoke", "success").Inc()
-	a.audit(r, database.AuditKeyRevoked, user.Email, &userID, "key "+key.KeyPrefix)
 	http.Redirect(w, r, "/admin?flash=Key+revoked#users", http.StatusFound)
 }
 

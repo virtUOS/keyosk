@@ -2,8 +2,8 @@ package keyprovider
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 )
@@ -195,8 +195,14 @@ func (f *Fake) DeleteKey(ctx context.Context, ref string) error {
 	if f.DeleteErr != nil {
 		return f.DeleteErr
 	}
+	// A key that is gone counts as deleted, as on the real gateway. A ref the
+	// fake never issued still fails, to catch a handler deleting by the secret,
+	// the prefix or nothing.
 	if _, ok := f.Keys[ref]; !ok {
-		return errors.New("key not found")
+		if f.MissingRefs[ref] || slices.Contains(f.Deleted, ref) {
+			return nil
+		}
+		return fmt.Errorf("fake gateway never issued key %q", ref)
 	}
 	delete(f.Keys, ref)
 	f.Deleted = append(f.Deleted, ref)
@@ -245,7 +251,7 @@ func (f *Fake) UpdateExpiry(ctx context.Context, ref string, expiresAt time.Time
 	}
 	req, ok := f.Keys[ref]
 	if !ok {
-		return errors.New("key not found")
+		return fmt.Errorf("fake gateway has no key %s: %w", ref, ErrKeyNotFound)
 	}
 	req.ExpiresAt = expiresAt
 	f.Keys[ref] = req
