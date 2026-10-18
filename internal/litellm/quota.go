@@ -51,10 +51,13 @@ func periodRank(period string) int {
 //
 // The widest window is the allowance worth rotating a key to escape, so that
 // is the one that has to follow the person (issue #26). The shorter windows
-// stay on the key: they cap bursts and reset on their own within hours, so a
-// rotation that resets them gains nothing worth defending against. An internal
-// user can hold only one window — it accepts budget_limits and silently drops
-// them — which is why this is a split rather than a copy.
+// stay on the key, so each key counts them on its own and a regenerated key
+// starts them over. That is by design: they protect users against runaway
+// spend, while the widest window caps what the person spends. An internal user
+// can hold only one window — it accepts budget_limits and silently drops them
+// — which is why this is a split rather than a copy. LiteLLM 1.105 offers no
+// way around it: a key's window spend cannot be carried over to a new key, and
+// /key/regenerate, which keeps it, needs an Enterprise licence.
 //
 // Returns the widest window and the remainder, preserving input order. For no
 // windows the widest is the zero value, which callers read as "no budget".

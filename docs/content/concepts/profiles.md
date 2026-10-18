@@ -35,7 +35,7 @@ Profile fields:
 | ---------------- | ------------------------------------------------------------------------ |
 | Models           | Comma-separated list of allowed model names (empty = all models)          |
 | Key validity     | How long a generated key lasts, in days (blank = `KEY_DURATION_DAYS`)     |
-| Usage limit      | Spend allowance per period, in `BUDGET_UNIT` (blank = unlimited); several windows may apply at once |
+| Usage limit      | Spend allowance per period, in `BUDGET_UNIT` (blank = unlimited); several windows may apply at once, and all but the widest apply [per key](usage-limits.md#how-usage-limits-work) |
 | Limit resets     | `hourly`, `daily`, `weekly` or `monthly`                                  |
 | TPM limit        | Maximum tokens per minute — burst control, complements the usage limit    |
 | RPM limit        | Maximum requests per minute                                               |

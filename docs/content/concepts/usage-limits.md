@@ -18,10 +18,24 @@ rate limits answer 429 instead.
 key takes `budget_limits` as a list of `{budget_duration, max_budget}` objects
 and rejects with `ExceededBudget: Key over 1h budget` when any one is spent.
 The tightest window binds, so a shorter period may not carry a larger budget
-than a longer one; the admin form rejects that. The widest window is held
-against the user rather than the key so regenerating a key does not reset it.
+than a longer one; the admin form rejects that.
 This needs LiteLLM v1.105.0 or later: the dashboard reads what has been spent
 in each window from the `budget_limits_usage` that its `/key/info` reports.
+
+**Only the widest window applies to the person.** It is held on the person's
+LiteLLM internal user, so it counts every key they hold and survives a key
+rotation. The shorter windows stay on the key: each key counts them on its
+own, and a regenerated key starts them over. With "5/day + 50/month" a person
+can therefore spend more than 5 in a day by regenerating their key, but never
+more than 50 in a month. Treat the shorter windows as a guard that protects
+users against runaway spend, such as a script stuck in a loop, not as a cap on
+what a person may spend; put that cap in the widest window. The dashboard and
+the profile help mark the shorter windows as "per key".
+
+LiteLLM leaves no better option. An internal user holds a single window: it
+accepts `budget_limits` and drops them. The spend counted in a key's window
+cannot be carried over to a new key, and `/key/regenerate`, which keeps the
+counters, needs an Enterprise licence.
 
 ## Usage reporting
 

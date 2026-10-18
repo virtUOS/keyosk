@@ -48,7 +48,8 @@ func TestDashboardQuotaRendering(t *testing.T) {
 				{Budget: 0.1, Period: "30d"},
 			}},
 			[]quotaLine{
-				{Budget: "$0.01", Period: "per day"},
+				// Only the widest window follows the person; the rest are per key.
+				{Budget: "$0.01", Period: "per day", PerKey: true},
 				{Budget: "$0.10", Period: "per month"},
 			},
 		},

@@ -14,6 +14,9 @@ import (
 // owner (#26); what stays on the key is then nothing, one window in the flat
 // max_budget/budget_duration pair, or several in budget_limits with their
 // spend in budget_limits_usage. The fixtures follow LiteLLM 1.105's responses.
+// Each window also says whether it is the key's own or the owner's: a key
+// from before owners were tracked holds its widest window itself, and that
+// one must not pass for the person's.
 //
 // None of it may come from the spend log: that is the whole log of the key,
 // and downloading it on every dashboard view stalled the gateway (#116).
@@ -34,6 +37,7 @@ func TestWindowsByShape(t *testing.T) {
 		period string
 		used   float64
 		limit  float64
+		perKey bool
 	}
 	cases := []struct {
 		name string
@@ -54,7 +58,7 @@ func TestWindowsByShape(t *testing.T) {
 			key: `{"info":{"status":"active","spend":0.5,"max_budget":null,
 			  "budget_duration":null,"budget_reset_at":null,"budget_limits":null}}`,
 			user: owner,
-			want: []want{{"7d", 10, 25}},
+			want: []want{{"7d", 10, 25, false}},
 		},
 		{
 			name: "owner limit and one key limit",
@@ -63,7 +67,7 @@ func TestWindowsByShape(t *testing.T) {
 			key: fmt.Sprintf(`{"info":{"status":"active","spend":0.3,"max_budget":1,
 			  "budget_duration":"1h","budget_reset_at":%q,"budget_limits":null}}`, hour),
 			user: owner,
-			want: []want{{"1h", 0.3, 1}, {"7d", 10, 25}},
+			want: []want{{"1h", 0.3, 1, true}, {"7d", 10, 25, false}},
 		},
 		{
 			name: "owner limit and two key limits",
@@ -75,7 +79,7 @@ func TestWindowsByShape(t *testing.T) {
 			  "budget_limits_usage":{"1h":{"current_spend":0.1},"24h":{"current_spend":0.4}}}}`,
 				hour, day),
 			user: owner,
-			want: []want{{"1h", 0.1, 1}, {"24h", 0.4, 5}, {"7d", 10, 25}},
+			want: []want{{"1h", 0.1, 1, true}, {"24h", 0.4, 5, true}, {"7d", 10, 25, false}},
 		},
 		{
 			name: "key from before owners were tracked",
@@ -87,7 +91,7 @@ func TestWindowsByShape(t *testing.T) {
 			  "budget_limits_usage":{"1h":{"current_spend":0.2},"7d":{"current_spend":2}}}}`,
 				hour, week),
 			user: "",
-			want: []want{{"1h", 0.2, 1}, {"7d", 2, 5}},
+			want: []want{{"1h", 0.2, 1, true}, {"7d", 2, 5, true}},
 		},
 	}
 
@@ -125,6 +129,11 @@ func TestWindowsByShape(t *testing.T) {
 				}
 				if g.ResetsAt.IsZero() {
 					t.Errorf("%s window has no reset time", g.Period)
+				}
+				// The report says where each window lives, so the dashboard
+				// never has to guess which one survives a key rotation.
+				if g.PerKey != w.perKey {
+					t.Errorf("%s window PerKey = %v, want %v", g.Period, g.PerKey, w.perKey)
 				}
 			}
 		})

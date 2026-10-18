@@ -107,7 +107,8 @@ func (f *Fake) UpdateLimits(_ context.Context, ref string, user User, l Limits) 
 	return nil
 }
 
-// Windows returns the canned per-window figures: the key's, then the owner's.
+// Windows returns the canned per-window figures: the key's, marked per key,
+// then the owner's.
 func (f *Fake) Windows(_ context.Context, ref, ownerID string) ([]WindowUsage, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -115,9 +116,15 @@ func (f *Fake) Windows(_ context.Context, ref, ownerID string) ([]WindowUsage, e
 		return nil, f.WindowsErr
 	}
 	var out []WindowUsage
-	out = append(out, f.WindowsByRef[ref]...)
+	for _, w := range f.WindowsByRef[ref] {
+		w.PerKey = true
+		out = append(out, w)
+	}
 	if ownerID != "" {
-		out = append(out, f.WindowsByOwner[ownerID]...)
+		for _, w := range f.WindowsByOwner[ownerID] {
+			w.PerKey = false
+			out = append(out, w)
+		}
 	}
 	return out, nil
 }
