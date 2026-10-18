@@ -480,6 +480,9 @@ textarea { resize: vertical; min-height: 72px; }
   align-items: center;
   margin-bottom: .5rem;
 }
+/* A window the server would refuse, marked as the admin types. */
+.quota-row :invalid { border-color: var(--danger); }
+.quota-error { color: var(--danger); margin: 0 0 .5rem; font-size: .85rem; }
 
 /* ── Dialogs ────────────────────────────────────────────── */
 /* The edit forms open over the table, so editing a row does not scroll the

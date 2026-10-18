@@ -343,7 +343,7 @@ func (a *Admin) CreateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		http.Redirect(w, r, "/admin?flash=Invalid+quota+window", http.StatusFound)
+		http.Redirect(w, r, "/admin?flash="+url.QueryEscape("Invalid quota window: "+err.Error()), http.StatusFound)
 		return
 	}
 
@@ -380,7 +380,7 @@ func (a *Admin) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		http.Redirect(w, r, "/admin?flash=Invalid+quota+window", http.StatusFound)
+		http.Redirect(w, r, "/admin?flash="+url.QueryEscape("Invalid quota window: "+err.Error()), http.StatusFound)
 		return
 	}
 	p.ID = id
@@ -701,7 +701,7 @@ func parseQuotaWindows(form url.Values) ([]database.ProfileQuota, error) {
 		raw = strings.ReplaceAll(raw, ",", ".")
 		amount, err := strconv.ParseFloat(raw, 64)
 		if err != nil || math.IsNaN(amount) || math.IsInf(amount, 0) {
-			return nil, fmt.Errorf("invalid quota amount %q", raw)
+			return nil, errors.New("the amount is not a number")
 		}
 		if amount <= 0 {
 			continue
@@ -711,10 +711,10 @@ func parseQuotaWindows(form url.Values) ([]database.ProfileQuota, error) {
 			period = strings.TrimSpace(periods[i])
 		}
 		if !litellm.IsValidQuotaPeriod(period) || period == "" {
-			return nil, fmt.Errorf("invalid quota period %q", period)
+			return nil, errors.New("unknown period")
 		}
 		if seen[period] {
-			return nil, fmt.Errorf("duplicate quota period %q", period)
+			return nil, fmt.Errorf("the %s window is set twice", periodName(period))
 		}
 		seen[period] = true
 		out = append(out, database.ProfileQuota{Budget: amount, Period: period})
@@ -726,7 +726,26 @@ func parseQuotaWindows(form url.Values) ([]database.ProfileQuota, error) {
 	return out, nil
 }
 
-// periodHours orders the windows by length so they can be compared.
+// periodName names a period the way the form's period menu does, for the
+// error an admin reads after saving.
+func periodName(p string) string {
+	switch p {
+	case "1h":
+		return "hourly"
+	case "24h":
+		return "daily"
+	case "7d":
+		return "weekly"
+	case "30d":
+		return "monthly"
+	default:
+		return p
+	}
+}
+
+// periodHours orders the windows by length so they can be compared. The
+// profile form in admin.html checks the same rules before it posts; keep the
+// two in step.
 var periodHours = map[string]int{"1h": 1, "24h": 24, "7d": 168, "30d": 720}
 
 // checkWindowsBind rejects a window that can never take effect.
@@ -743,8 +762,8 @@ func checkWindowsBind(qs []database.ProfileQuota) error {
 			}
 			// a is the shorter window; it must not allow more than b.
 			if periodHours[a.Period] < periodHours[b.Period] && a.Budget > b.Budget {
-				return fmt.Errorf("%s allowance (%g) exceeds the longer %s allowance (%g)",
-					a.Period, a.Budget, b.Period, b.Budget)
+				return fmt.Errorf("the %s allowance (%g) is larger than the %s one (%g)",
+					periodName(a.Period), a.Budget, periodName(b.Period), b.Budget)
 			}
 		}
 	}

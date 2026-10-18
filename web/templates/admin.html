@@ -209,7 +209,8 @@
             <div class="form-group span-all">
               <label>{{T .Lang "admin.form.quota"}} <button type="button" class="help" data-help="{{T $.Lang "help.usagelimit"}}">?</button></label>
               <div id="pf-quotas"></div>
-              <button type="button" class="btn btn-sm btn-secondary" onclick="addQuotaRow()">
+              <p class="quota-error" id="pf-quota-error" role="alert" hidden></p>
+              <button type="button" class="btn btn-sm btn-secondary" id="pf-quota-add" onclick="addQuotaRow()">
                 + {{T .Lang "admin.form.quota.add"}}
               </button>
               <div class="form-hint">{{T .Lang "admin.form.quota.hint"}} {{T .Lang "admin.form.quota.unit"}} {{.BudgetUnit}}</div>
@@ -612,11 +613,17 @@ function openEditProfile(id, name, desc, models, tpm, rpm, expiry, quotas, isDef
 // at once ("0.10/day AND 5/month"), which the gateway enforces
 // independently. Rows post as parallel quota_budget/quota_period arrays and
 // are paired by position on the server.
+const QUOTA_TEXT = {
+  duplicate: {{T .Lang "admin.form.quota.duplicate"}},
+  exceeds: {{T .Lang "admin.form.quota.exceeds"}},
+};
+// Each period carries its length in hours, the same as periodHours on the
+// server, so the length comparison below does not depend on the menu order.
 const QUOTA_PERIODS = [
-  ['1h', {{T .Lang "period.hourly"}}],
-  ['24h', {{T .Lang "period.daily"}}],
-  ['7d', {{T .Lang "period.weekly"}}],
-  ['30d', {{T .Lang "period.monthly"}}],
+  ['1h', {{T .Lang "period.hourly"}}, 1],
+  ['24h', {{T .Lang "period.daily"}}, 24],
+  ['7d', {{T .Lang "period.weekly"}}, 168],
+  ['30d', {{T .Lang "period.monthly"}}, 720],
 ];
 
 function quotaRow(budget, period) {
@@ -630,6 +637,7 @@ function quotaRow(budget, period) {
   n.step = 'any';
   n.placeholder = {{T .Lang "admin.form.quota.amount"}};
   n.value = budget || '';
+  n.addEventListener('input', checkQuotaRows);
 
   const sel = document.createElement('select');
   sel.name = 'quota_period';
@@ -640,26 +648,82 @@ function quotaRow(budget, period) {
     if (value === period) o.selected = true;
     sel.appendChild(o);
   }
+  sel.addEventListener('change', checkQuotaRows);
 
   const del = document.createElement('button');
   del.type = 'button';
   del.className = 'btn btn-danger-quiet';
   del.textContent = '×';
   del.setAttribute('aria-label', {{T .Lang "admin.delete"}});
-  del.onclick = () => row.remove();
+  del.onclick = () => { row.remove(); checkQuotaRows(); };
 
   row.append(n, sel, del);
   return row;
 }
 
+// A new row starts at the first period no other row uses, so adding a
+// second window does not silently repeat the first one's period. Once every
+// period is taken there is nothing left to add, and the button hides.
 function addQuotaRow(budget, period) {
+  if (!period) {
+    const used = new Set(quotaRows().map(r => r.period.value));
+    period = (QUOTA_PERIODS.find(([value]) => !used.has(value)) || QUOTA_PERIODS[0])[0];
+  }
   document.getElementById('pf-quotas').appendChild(quotaRow(budget, period));
+  checkQuotaRows();
 }
 
 function setQuotaRows(quotas) {
   const box = document.getElementById('pf-quotas');
   box.textContent = '';
   for (const q of (quotas || [])) addQuotaRow(q.Budget, q.Period);
+  checkQuotaRows();
+}
+
+function quotaRows() {
+  return [...document.querySelectorAll('#pf-quotas .quota-row')].map(row => ({
+    amount: row.querySelector('input[name="quota_budget"]'),
+    period: row.querySelector('select[name="quota_period"]'),
+  }));
+}
+
+// checkQuotaRows marks the windows the server would refuse, so the browser
+// holds the form back and points at the mistake instead of the admin losing
+// every change to a failed save. It checks what parseQuotaWindows and
+// checkWindowsBind in internal/handlers/admin.go check; keep the two in step.
+// A row without a positive amount is dropped on save, so it is left out.
+function checkQuotaRows() {
+  const rows = quotaRows();
+  document.getElementById('pf-quota-add').hidden = rows.length >= QUOTA_PERIODS.length;
+  const entry = p => QUOTA_PERIODS.find(([value]) => value === p);
+  const hours = p => entry(p)[2];
+  const label = p => entry(p)[1];
+  const active = rows.filter(r => parseFloat(r.amount.value.replace(',', '.')) > 0);
+  // A period's first row is the window; later rows on it are duplicates, and
+  // only the window takes part in the length comparison, as on the server.
+  const windows = active.filter((r, i) => !active.slice(0, i).some(o => o.period.value === r.period.value));
+  for (const r of rows) {
+    r.amount.setCustomValidity('');
+    r.period.setCustomValidity('');
+  }
+  active.forEach(r => {
+    if (!windows.includes(r)) {
+      r.period.setCustomValidity(QUOTA_TEXT.duplicate);
+      return;
+    }
+    const amount = parseFloat(r.amount.value.replace(',', '.'));
+    const longer = windows.find(o => hours(o.period.value) > hours(r.period.value) &&
+      parseFloat(o.amount.value.replace(',', '.')) < amount);
+    if (longer) {
+      r.amount.setCustomValidity(QUOTA_TEXT.exceeds.replace('{period}', label(longer.period.value)));
+    }
+  });
+  // The browser only shows a field's message on submit; this keeps the first
+  // one in view while the admin is still editing.
+  const error = document.getElementById('pf-quota-error');
+  const first = rows.flatMap(r => [r.amount, r.period]).find(f => f.validationMessage);
+  error.textContent = first ? first.validationMessage : '';
+  error.hidden = !first;
 }
 
 // Models arrive as a comma-separated string; tick the matching boxes, or fall
