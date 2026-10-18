@@ -285,7 +285,7 @@ func (a *Admin) Panel(w http.ResponseWriter, r *http.Request) {
 		users[i] = row
 	}
 
-	audit, err := a.store.ListAuditEvents(r.Context(), 50)
+	audit, err := a.store.ListAuditEvents(r.Context(), 500)
 	if err != nil {
 		slog.Error("list audit events", "err", err)
 	}

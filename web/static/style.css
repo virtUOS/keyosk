@@ -308,12 +308,16 @@ main.main-wide { max-width: 1280px; }
 /* A heading with an action beside it, such as "Profiles" and "New profile". */
 .section-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
   margin-bottom: 1.25rem;
 }
 .card .section-head h2 { margin-bottom: 0; }
+/* The filter box above a table, in place of an action. It shares the row with
+   the heading and wraps below it when there is no room. */
+.section-head .table-filter { flex: 1 1 14rem; max-width: 20rem; }
 
 /* ── Cards ───────────────────────────────────────────────── */
 .card {
@@ -512,7 +516,10 @@ td {
   vertical-align: middle;
   overflow-wrap: break-word;
 }
-tr:last-child td { border-bottom: none; }
+/* The last row has no line under it. Not :last-child: the filtered tables end
+   in a hidden "no match" row, and a filter can hide the last rows too, so the
+   last row is the one no visible row follows. */
+tr:not(:has(~ tr:not([hidden]))) td { border-bottom: none; }
 tr:hover td { background: var(--tr-hover); }
 /* Prose columns get a floor, or the browser hands their width to the
    unwrappable columns and leaves them a word per line. */
@@ -601,7 +608,7 @@ td.cell-id { overflow-wrap: anywhere; }
   .stack-lg thead { display: none; }
   .stack-lg, .stack-lg tbody, .stack-lg tr, .stack-lg td { display: block; }
   .stack-lg tr { position: relative; padding: .7rem 0; border-bottom: 1px solid var(--border-light); }
-  .stack-lg tr:last-child { border-bottom: none; }
+  .stack-lg tr:not(:has(~ tr:not([hidden]))) { border-bottom: none; }
   .stack-lg td { padding: .15rem 0; border: none; min-width: 0; }
   .stack-lg tr:hover td { background: none; }
   .stack-lg td:first-child { padding-right: 2.5rem; font-weight: 600; }
@@ -616,7 +623,7 @@ td.cell-id { overflow-wrap: anywhere; }
   .stack-md thead { display: none; }
   .stack-md, .stack-md tbody, .stack-md tr, .stack-md td { display: block; }
   .stack-md tr { position: relative; padding: .7rem 0; border-bottom: 1px solid var(--border-light); }
-  .stack-md tr:last-child { border-bottom: none; }
+  .stack-md tr:not(:has(~ tr:not([hidden]))) { border-bottom: none; }
   .stack-md td { padding: .15rem 0; border: none; min-width: 0; }
   .stack-md tr:hover td { background: none; }
   .stack-md td:first-child { padding-right: 2.5rem; font-weight: 600; }

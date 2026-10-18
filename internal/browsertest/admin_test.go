@@ -165,3 +165,58 @@ func TestUserDialogShowsDeadline(t *testing.T) {
 	check(t, expect.Locator(dialog.Locator(".expiry-options")).ToBeVisible())
 	check(t, expect.Locator(dialog.Locator("select[name='after_expiry'] option:checked")).ToHaveText("Tight"))
 }
+
+// The filter box above the users hides the rows that do not contain the text,
+// says so when none does, and shows them all again when it is cleared.
+func TestUsersFilter(t *testing.T) {
+	t.Parallel()
+	page := loggedIn(t, "admin", adminView)
+	goTo(t, page, "/admin#users")
+	box := page.Locator("#tab-users .table-filter")
+	noMatch := page.Locator("#tab-users .no-match")
+
+	check(t, box.Fill("INTERN@"))
+	check(t, expect.Locator(userRow(page, "intern")).ToBeVisible())
+	check(t, expect.Locator(userRow(page, "nokey")).ToBeHidden())
+	check(t, expect.Locator(noMatch).ToBeHidden())
+
+	// The row menu's entries are not searched, or every row would match.
+	check(t, box.Fill("Revoke key"))
+	check(t, expect.Locator(noMatch).ToBeVisible())
+	check(t, expect.Locator(userRow(page, "intern")).ToBeHidden())
+
+	check(t, box.Fill(""))
+	check(t, expect.Locator(userRow(page, "intern")).ToBeVisible())
+	check(t, expect.Locator(userRow(page, "nokey")).ToBeVisible())
+	check(t, expect.Locator(noMatch).ToBeHidden())
+}
+
+// The filter box above the audit log keeps only the events containing the
+// text, and shows that nothing matches.
+func TestAuditFilter(t *testing.T) {
+	t.Parallel()
+	page := loggedIn(t, "admin", adminView)
+	goTo(t, page, "/admin#audit")
+	box := page.Locator("#tab-audit .table-filter")
+	rows := page.Locator("#tab-audit tbody tr:not(.empty-row)")
+	visible := page.Locator("#tab-audit tbody tr:not(.empty-row):visible")
+
+	all, err := rows.Count()
+	check(t, err)
+	check(t, box.Fill("profile_expired"))
+	n, err := visible.Count()
+	check(t, err)
+	if n == 0 || n == all {
+		t.Fatalf("filter left %d of %d rows visible", n, all)
+	}
+	for i := 0; i < n; i++ {
+		check(t, expect.Locator(visible.Nth(i)).ToContainText("profile_expired"))
+	}
+
+	check(t, box.Fill("no such event"))
+	check(t, expect.Locator(page.Locator("#tab-audit .no-match")).ToBeVisible())
+	check(t, expect.Locator(visible).ToHaveCount(0))
+
+	check(t, box.Fill(""))
+	check(t, expect.Locator(visible).ToHaveCount(all))
+}

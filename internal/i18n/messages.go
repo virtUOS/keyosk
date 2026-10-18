@@ -213,7 +213,9 @@ var messages = map[string]map[Lang]string{
 	"admin.noprofiles":       {DE: "Noch keine Profile.", EN: "No profiles yet."},
 	"admin.nousers":          {DE: "Noch keine Benutzenden.", EN: "No users yet."},
 	"admin.noevents":         {DE: "Noch keine Ereignisse erfasst.", EN: "No events recorded yet."},
-	"admin.audit.note":       {DE: "Die 50 jüngsten Schlüssel- und Profiländerungen.", EN: "The 50 most recent key and profile changes."},
+	"admin.audit.note":       {DE: "Die 500 jüngsten Schlüssel- und Profiländerungen. Der Filter durchsucht nur diese.", EN: "The 500 most recent key and profile changes. The filter searches only these."},
+	"admin.filter":           {DE: "Filtern …", EN: "Filter…"},
+	"admin.filter.nomatch":   {DE: "Keine Einträge passen zum Filter.", EN: "No entries match the filter."},
 
 	"admin.admins":              {DE: "Administration", EN: "Admins"},
 	"admin.admins.note":         {DE: "Wer auf diese Seite zugreifen darf. Niemand kann sich die eigenen Rechte entziehen.", EN: "Who may reach this page. Nobody can remove their own rights."},
