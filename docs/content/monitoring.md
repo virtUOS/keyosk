@@ -33,6 +33,8 @@ For a quick look, `curl -H "Authorization: Bearer $METRICS_TOKEN" https://…/me
 | `keyosk_keys_missing_removed_total` | marked keys removed after the grace period ran out |
 | `keyosk_active_keys` | keys currently issued |
 | `keyosk_keys_expiring_7d` | keys expiring within a week |
+| `keyosk_job_last_success_timestamp_seconds` | when each background job last ran without error, by `job`; the job's start time until it first succeeds |
+| `keyosk_job_interval_seconds` | how often each background job runs, by `job` |
 
 The missing-key metrics are the alarm for a Keyosk instance pointed at the
 wrong gateway, or at one restored from a backup. Suggested alerts: a warning
@@ -41,6 +43,23 @@ when `keyosk_keys_missing` stays above zero for an hour, or when
 `keyosk_keys_missing_removed_total` rises, since a record was lost. The first
 fires while the grace period (`KEY_MISSING_GRACE_PERIOD`) still lets you
 correct the cause without losing anything.
+
+The job metrics show whether the background jobs still run. The jobs are
+`expiry_reminder` (expiry notices, every 6 hours), `profile_expiry` (reverting
+temporary profile assignments, every 15 minutes), `limit_sync` (pushing
+profile limits to the gateway, every `LIMIT_SYNC_INTERVAL`) and
+`session_cleanup` (hourly). A run counts as a success when it gets through,
+even if a single notice or key failed along the way; those failures are
+logged and retried. One alert covers all of them, firing when a job has not
+succeeded for two of its intervals, whether it stopped, keeps failing or is
+still working on one run:
+
+```promql
+time() - keyosk_job_last_success_timestamp_seconds > 2 * keyosk_job_interval_seconds
+```
+
+Before its first success, a job's timestamp is the time it started, so a job
+that fails from the start alerts as well, without firing on every restart.
 
 ## Health checks
 

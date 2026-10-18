@@ -423,6 +423,7 @@ func (s *Syncer) fail(ctx context.Context, t database.LimitSyncTarget, reason st
 // Start runs the sync at startup, whenever Kick is called, and every interval
 // to retry what failed, until ctx is cancelled.
 func (s *Syncer) Start(ctx context.Context, every time.Duration) {
+	metrics.JobStarted(metrics.JobLimitSync, every)
 	t := time.NewTicker(every)
 	defer t.Stop()
 	for {
@@ -442,6 +443,9 @@ func (s *Syncer) runAndLog(ctx context.Context) {
 		slog.Error("limit sync run", "err", err, "synced", res.Synced, "failed", res.Failed,
 			"marked", res.Marked, "found", res.Found, "removed", res.Removed)
 		return
+	}
+	if err == nil {
+		metrics.JobSucceeded(metrics.JobLimitSync)
 	}
 	if res.Synced > 0 || res.Failed > 0 || res.Marked > 0 || res.Found > 0 || res.Removed > 0 {
 		slog.Info("limit sync run", "synced", res.Synced, "failed", res.Failed,

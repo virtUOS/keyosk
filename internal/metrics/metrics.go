@@ -82,7 +82,41 @@ var (
 		Name: "keyosk_keys_expiring_7d",
 		Help: "Issued keys expiring within seven days.",
 	})
+
+	// jobLastSuccess and jobInterval together make one alert rule fit every
+	// background job: time() - last success > 2 * interval.
+	jobLastSuccess = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "keyosk_job_last_success_timestamp_seconds",
+		Help: "When each background job last ran without error, in Unix seconds; the time the job started until it first succeeds.",
+	}, []string{"job"})
+
+	jobInterval = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "keyosk_job_interval_seconds",
+		Help: "How often each background job is scheduled to run.",
+	}, []string{"job"})
 )
+
+// The background jobs, as the label values of the job metrics.
+const (
+	JobExpiryReminder = "expiry_reminder"
+	JobProfileExpiry  = "profile_expiry"
+	JobLimitSync      = "limit_sync"
+	JobSessionCleanup = "session_cleanup"
+)
+
+// JobStarted publishes the interval of a job whose loop is starting. Until
+// the job first succeeds, its last success reads as now: a job that never
+// succeeds then alerts after twice its interval, like one that stopped, where
+// zero would alert on every restart and a missing series never would.
+func JobStarted(job string, every time.Duration) {
+	jobLastSuccess.WithLabelValues(job).SetToCurrentTime()
+	jobInterval.WithLabelValues(job).Set(every.Seconds())
+}
+
+// JobSucceeded records that a run of the job finished without error.
+func JobSucceeded(job string) {
+	jobLastSuccess.WithLabelValues(job).SetToCurrentTime()
+}
 
 // init pre-registers the label combinations so each series exists at zero from
 // startup. A CounterVec otherwise emits nothing until first use, which makes a
