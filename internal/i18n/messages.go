@@ -8,7 +8,7 @@ package i18n
 var messages = map[string]map[Lang]string{
 	// ── Shared ──────────────────────────────────────────────────────────
 	"app.title":          {DE: "Keyosk", EN: "Keyosk"},
-	"nav.admin":          {DE: "Administration", EN: "Admin"},
+	"nav.admin":          {DE: "Administration", EN: "Administration"},
 	"nav.dashboard":      {DE: "Übersicht", EN: "Dashboard"},
 	"nav.signout":        {DE: "Abmelden", EN: "Sign out"},
 	"nav.privacy":        {DE: "Datenschutz", EN: "Privacy"},
