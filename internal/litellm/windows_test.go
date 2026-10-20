@@ -156,7 +156,7 @@ func TestWindowsFailsOnAWindowWithoutSpend(t *testing.T) {
 }
 
 // Windows is the whole allowance on a dashboard load, so it reads the key and
-// its owner once each (D1).
+// its owner once each.
 func TestWindowsReadsEachRecordOnce(t *testing.T) {
 	calls := map[string]int{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

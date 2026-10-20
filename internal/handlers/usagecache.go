@@ -76,3 +76,15 @@ func (c *usageCache) History(ctx context.Context, ownerID string) (keyprovider.H
 	c.entries[ownerID] = usageEntry{history: h, fetchedAt: time.Now()}
 	return h, nil
 }
+
+// Windows reports consumption against every allowance window of the key and
+// its owner.
+//
+// Uncached: it is the figure users act on when they are close to the limit,
+// and a minute-stale number there is worse than a fresh call.
+func (c *usageCache) Windows(ctx context.Context, ref, ownerID string) ([]keyprovider.WindowUsage, error) {
+	if c.reporter == nil || ref == "" {
+		return nil, nil
+	}
+	return c.reporter.Windows(ctx, ref, ownerID)
+}

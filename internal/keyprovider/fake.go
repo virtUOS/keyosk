@@ -47,9 +47,10 @@ type Fake struct {
 	ModelUsageByOwner map[string][]ModelUsage
 	UsageErr          error
 
-	// WindowsByRef and WindowsByOwner are what Windows returns; WindowsErr
-	// forces it to fail. The owner's entry wins, as on the real gateway, so a
-	// test can assert that a figure survives a key rotation.
+	// WindowsByRef and WindowsByOwner are what Windows returns, the key's
+	// windows followed by the owner's, as on the real gateway; WindowsErr
+	// forces it to fail. The owner's entry is keyed by the person, so a test
+	// can assert that a figure survives a key rotation.
 	WindowsByRef   map[string][]WindowUsage
 	WindowsByOwner map[string][]WindowUsage
 	WindowsErr     error
@@ -106,17 +107,19 @@ func (f *Fake) UpdateLimits(_ context.Context, ref string, user User, l Limits) 
 	return nil
 }
 
-// Windows returns the canned per-window figures, preferring the owner's.
+// Windows returns the canned per-window figures: the key's, then the owner's.
 func (f *Fake) Windows(_ context.Context, ref, ownerID string) ([]WindowUsage, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.WindowsErr != nil {
 		return nil, f.WindowsErr
 	}
-	if w, ok := f.WindowsByOwner[ownerID]; ok && ownerID != "" {
-		return w, nil
+	var out []WindowUsage
+	out = append(out, f.WindowsByRef[ref]...)
+	if ownerID != "" {
+		out = append(out, f.WindowsByOwner[ownerID]...)
 	}
-	return f.WindowsByRef[ref], nil
+	return out, nil
 }
 
 // Models is what ListModels returns.
