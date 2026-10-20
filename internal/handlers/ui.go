@@ -784,17 +784,10 @@ func quotaPct(used, limit float64) int {
 
 // quotaWindows reports each allowance window with what it has left.
 //
-// Uncached: it is the figure users act on when they are close to the limit,
-// and a minute-stale number there is worse than a fresh call.
-//
 // Returns nothing when the key has no quota or the provider does not report
 // usage. An error means the gateway could not be read.
 func (u *UI) quotaWindows(ctx context.Context, ref, ownerID string, lang i18n.Lang) ([]quotaWindowView, error) {
-	reporter := u.usage.reporter
-	if reporter == nil || ref == "" {
-		return nil, nil
-	}
-	windows, err := reporter.Windows(ctx, ref, ownerID)
+	windows, err := u.usage.Windows(ctx, ref, ownerID)
 	if err != nil {
 		slog.Error("read quota windows", "err", err)
 		return nil, err
