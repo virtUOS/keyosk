@@ -136,3 +136,13 @@ docker compose up -d
 
 Keyosk runs any new migrations when it starts. Take a backup first: a
 migration cannot be rolled back.
+
+To see which version runs, open **About Keyosk** in the account menu, or ask
+the image, which needs no configuration and no running container:
+
+```sh
+docker run --rm ghcr.io/virtuos/keyosk:main -version
+```
+
+It prints the version, the commit it was built from and the Go version, and
+Keyosk logs its version and commit at every start.

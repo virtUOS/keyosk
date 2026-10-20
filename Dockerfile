@@ -8,6 +8,10 @@ ENV CGO_ENABLED=0 GOOS=linux
 
 WORKDIR /src
 
+# The go command runs git to stamp the version and commit into the binary
+# (see .dockerignore); the Alpine image comes without it.
+RUN apk add --no-cache git
+
 # Copy manifests first so dependency download is cached independently of source.
 COPY go.mod go.sum ./
 RUN go mod download
@@ -16,7 +20,8 @@ COPY . .
 
 # -trimpath drops local filesystem paths; -s -w strips the symbol and DWARF
 # tables. Templates and static assets are embedded via web/embed.go, so the
-# resulting binary is self-contained.
+# resulting binary is self-contained. The version and commit come from .git,
+# which the go command reads by itself.
 RUN go build -trimpath -ldflags='-s -w' -o /out/keyosk ./cmd/server
 
 # The runtime image has no shell, so the data directory is created here.

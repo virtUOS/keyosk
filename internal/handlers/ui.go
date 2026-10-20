@@ -46,6 +46,8 @@ type UI struct {
 	privacyTmpl *template.Template
 	// accountTmpl renders /account, the account settings.
 	accountTmpl *template.Template
+	// aboutTmpl renders /about, the build and the project's links.
+	aboutTmpl *template.Template
 }
 
 func NewUI(cfg *config.Config, store *database.Store, sessions *session.Manager, oidc *oidcpkg.Provider, keys keyprovider.Provider, csrf *session.CSRF, kickSync func()) *UI {
@@ -59,7 +61,7 @@ func NewUI(cfg *config.Config, store *database.Store, sessions *session.Manager,
 		usage.windowDays = cfg.UsageHistoryDays
 	}
 	return &UI{cfg: cfg, store: store, sessions: sessions, oidc: oidc, keys: keys,
-		tmpl: tmpl, privacyTmpl: parsePrivacyTemplate(), accountTmpl: parseAccountTemplate(), flash: newKeyFlash(), csrf: csrf,
+		tmpl: tmpl, privacyTmpl: parsePrivacyTemplate(), accountTmpl: parseAccountTemplate(), aboutTmpl: parseAboutTemplate(), flash: newKeyFlash(), csrf: csrf,
 		models: newModelCache(lister), usage: usage, kickSync: kickSync}
 }
 

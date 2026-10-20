@@ -34,19 +34,23 @@ func TestAccountMenu(t *testing.T) {
 		click(t, page.Locator(".account-trigger"))
 		check(t, expect.Locator(page.Locator("#account-menu")).ToContainText("student@uni-osnabrueck.de"))
 		check(t, page.Keyboard().Press("Escape"))
-		if got := links(t, page); !slices.Equal(got, []string{"Account settings"}) {
-			t.Errorf("menu on the dashboard links %q, want only the settings", got)
+		if got := links(t, page); !slices.Equal(got, []string{"Account settings", "About Keyosk"}) {
+			t.Errorf("menu on the dashboard links %q, want the settings and about", got)
 		}
 		goTo(t, page, "/account")
-		if got := links(t, page); !slices.Equal(got, []string{"Dashboard"}) {
-			t.Errorf("menu on the settings links %q, want only the dashboard", got)
+		if got := links(t, page); !slices.Equal(got, []string{"Dashboard", "About Keyosk"}) {
+			t.Errorf("menu on the settings links %q, want the dashboard and about", got)
+		}
+		goTo(t, page, "/about")
+		if got := links(t, page); !slices.Equal(got, []string{"Dashboard", "Account settings"}) {
+			t.Errorf("menu on the about page links %q, want the dashboard and the settings", got)
 		}
 	})
 	t.Run("admin", func(t *testing.T) {
 		t.Parallel()
 		page := loggedIn(t, "admin", pageOptions{})
-		if got := links(t, page); !slices.Equal(got, []string{"Administration", "Account settings"}) {
-			t.Errorf("admin's menu on the dashboard links %q, want the admin panel and the settings", got)
+		if got := links(t, page); !slices.Equal(got, []string{"Administration", "Account settings", "About Keyosk"}) {
+			t.Errorf("admin's menu on the dashboard links %q, want the admin panel, the settings and about", got)
 		}
 	})
 }

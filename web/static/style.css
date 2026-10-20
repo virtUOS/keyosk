@@ -339,6 +339,18 @@ main.main-wide { max-width: 1280px; }
 .notice ul { padding-left: 1.25rem; }
 .notice li { margin-bottom: .4rem; }
 
+/* The about page: the mark and name large, as on the project's banner. */
+.about { text-align: center; }
+.card h2.about-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: .5em;
+  font-size: 2rem;
+  margin-bottom: 1rem;
+}
+.about-intro { max-width: 36rem; margin: 0 auto 1.25rem; color: var(--text-muted); }
+.about-links { list-style: none; display: flex; flex-wrap: wrap; justify-content: center; gap: .5rem 1.5rem; }
+
 /* ── Info grid ───────────────────────────────────────────── */
 .info-grid { display: grid; grid-template-columns: max-content 1fr; gap: .4rem 1.25rem; }
 .info-grid dt { color: var(--text-subtle); font-size: .85rem; padding-top: .05rem; }

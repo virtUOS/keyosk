@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="{{.Lang}}"{{with .Theme}} data-theme="{{.}}"{{end}}>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{T .Lang "about.title"}} · {{T .Lang "app.title"}}</title>
+{{template "head-assets" .}}
+</head>
+<body>
+
+{{template "header" .}}
+
+<main>
+
+  <div class="card about">
+    <h2 class="about-brand">{{template "brand-mark" "-about"}}<span class="brand-name">keyosk</span></h2>
+    <p class="about-intro">{{T .Lang "about.intro"}}</p>
+    <ul class="about-links">
+      <li><a href="{{.DocsURL}}" target="_blank" rel="noopener">{{T .Lang "about.docs"}}</a></li>
+      <li><a href="{{.IssuesURL}}" target="_blank" rel="noopener">{{T .Lang "about.issues"}}</a></li>
+      <li><a href="{{.ProjectURL}}" target="_blank" rel="noopener">{{T .Lang "about.project"}}</a></li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>{{T .Lang "about.build"}}</h2>
+    {{/* A row the build did not record is left out rather than shown empty. */}}
+    <dl class="info-grid">
+      {{- with .Build.Version}}
+      <dt>{{T $.Lang "about.version"}}</dt> <dd class="mono">{{.}}</dd>
+      {{- end}}
+      {{- with .Build.ShortCommit}}
+      <dt>{{T $.Lang "about.commit"}}</dt> <dd class="mono"><a href="{{$.CommitURL}}" target="_blank" rel="noopener">{{.}}</a>{{if $.Build.Modified}} ({{T $.Lang "about.modified"}}){{end}}</dd>
+      {{- end}}
+      {{- if not .Build.Date.IsZero}}
+      <dt>{{T .Lang "about.date"}}</dt> <dd class="mono">{{.Build.Date.UTC.Format "2006-01-02 15:04 UTC"}}</dd>
+      {{- end}}
+      {{- with .Build.GoVersion}}
+      <dt>{{T $.Lang "about.go"}}</dt> <dd class="mono">{{.}}</dd>
+      {{- end}}
+    </dl>
+  </div>
+
+</main>
+
+{{template "footer" .}}
+
+</body>
+</html>

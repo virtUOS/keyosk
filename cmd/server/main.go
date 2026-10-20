@@ -13,6 +13,7 @@ import (
 
 	"github.com/joho/godotenv"
 
+	"github.com/virtuos/keyosk/internal/buildinfo"
 	"github.com/virtuos/keyosk/internal/config"
 	"github.com/virtuos/keyosk/internal/database"
 	"github.com/virtuos/keyosk/internal/handlers"
@@ -30,6 +31,7 @@ func main() {
 	resync := flag.Bool("resync-limits", false, "mark every key for a limit resync by the running server and exit")
 	makeAdminID := flag.Int64("make-admin", 0, "give the account with this ID the admin panel and exit")
 	backupFile := flag.String("backup", "", "write a consistent copy of the database to this file, replacing an older backup there, and exit")
+	version := flag.Bool("version", false, "print the version and build of this binary and exit")
 	flag.Parse()
 	// Neither flag has a "not given" value: -make-admin 0 and -backup "" (an
 	// unset variable in a cron job) must fail, not start a server, so whether
@@ -43,6 +45,13 @@ func main() {
 			backupSet = true
 		}
 	})
+
+	// Needs nothing at all, not even a .env, so it answers for an image or a
+	// binary that is not set up yet.
+	if *version {
+		writeVersion(os.Stdout, buildinfo.Get())
+		os.Exit(0)
+	}
 
 	_ = godotenv.Load()
 
@@ -100,6 +109,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "invalid LOG_LEVEL %q, using info\n", os.Getenv("LOG_LEVEL"))
 	}
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
+	slog.Info("starting keyosk", versionAttrs(buildinfo.Get())...)
 
 	cfg, err := config.Load()
 	if err != nil {

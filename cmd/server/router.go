@@ -70,6 +70,7 @@ func newRouter(cfg *config.Config, ui *handlers.UI, admin *handlers.Admin, csrf 
 		r.Get("/", ui.Dashboard)
 		r.Get("/account", ui.Account)
 		r.Post("/account", ui.SaveAccount)
+		r.Get("/about", ui.About)
 		r.Post("/key/generate", ui.GenerateKey)
 		r.Post("/key/extend", ui.ExtendKey)
 		r.Post("/key/delete", ui.DeleteKey)
