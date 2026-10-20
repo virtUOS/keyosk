@@ -13,6 +13,13 @@ jobs:
     steps:
       - name: Check out the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        # The whole history, so a build after a tag finds it: the go command
+        # names the version after the last tag, and without one in reach
+        # reports v0.0.0. The token stays out of .git/config: nothing after
+        # the checkout needs it there, and .git goes into the build.
+        with:
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0

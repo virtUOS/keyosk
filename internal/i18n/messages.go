@@ -17,6 +17,23 @@ var messages = map[string]map[Lang]string{
 	"privacy.changelang": {DE: "Sprache ändern", EN: "Change language"},
 	"lang.label":         {DE: "Sprache", EN: "Language"},
 	"nav.settings":       {DE: "Kontoeinstellungen", EN: "Account settings"},
+	"nav.about":          {DE: "Über Keyosk", EN: "About Keyosk"},
+
+	// ── About ───────────────────────────────────────────────────────────
+	"about.title": {DE: "Über Keyosk", EN: "About Keyosk"},
+	"about.intro": {
+		DE: "Keyosk ist ein Selbstbedienungsportal für API-Schlüssel: Nach der Anmeldung erhält man einen persönlichen Schlüssel für die Sprachmodelle, die über LiteLLM bereitgestellt werden, und behält Ablauf und Verbrauch im Blick.",
+		EN: "Keyosk is a self-service portal for API keys: after signing in, people get a personal key for the language models provided through LiteLLM and keep an eye on its expiry and usage.",
+	},
+	"about.docs":     {DE: "Dokumentation", EN: "Documentation"},
+	"about.issues":   {DE: "Fehler melden", EN: "Report an issue"},
+	"about.project":  {DE: "Projektseite", EN: "Project page"},
+	"about.build":    {DE: "Build", EN: "Build"},
+	"about.version":  {DE: "Version", EN: "Version"},
+	"about.commit":   {DE: "Commit", EN: "Commit"},
+	"about.modified": {DE: "mit lokalen Änderungen", EN: "with local changes"},
+	"about.date":     {DE: "Commit-Datum", EN: "Commit date"},
+	"about.go":       {DE: "Go-Version", EN: "Go version"},
 
 	// ── Account settings ────────────────────────────────────────────────
 	"account.title":      {DE: "Kontoeinstellungen", EN: "Account settings"},

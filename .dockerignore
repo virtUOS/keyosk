@@ -1,17 +1,54 @@
-# Allowlist: send the builder only what `go build` needs. Everything else
-# (docs, CI config, local databases, .env, build output, editor files) stays
-# out of the context, so it can neither leak into the image nor invalidate
-# the COPY . . layer.
-*
-!go.mod
-!go.sum
-!cmd
-!internal
-!web
+# The builder gets the whole checkout, .git included: the go command reads the
+# version and commit from it and stamps them into the binary (see
+# internal/buildinfo). Only the build stage sees any of it; the image gets the
+# binary alone.
+#
+# Never list a tracked file here. git in the builder would see it as deleted
+# and mark every build as modified (+dirty). What is listed is what .gitignore
+# keeps out of the repository, so keep the two in step: secrets and databases
+# must not reach the builder, the rest is bulk. A file only your global git
+# excludes ignore still reaches the builder and marks the build as modified.
 
-# Local leftovers inside the allowed directories.
+# Environment files — contain the LiteLLM master key and OIDC client secret.
+# Unlike git, docker matches a bare name at the root only, so **/ it is.
+**/.env
+**/.env.local
+**/.env.*.local
+
+# SQLite databases — contain users' plaintext LiteLLM API keys
 **/*.db
-**/*.db-*
+**/*.db-shm
+**/*.db-wal
 **/*.sqlite
 **/*.sqlite3
+
+# Build output
+/keyosk
+/server
+
+# The instance `make seed` runs: its binary, database, log and manifest.
+/dev/.seed/
+
+# Traces the browser tests save when one fails.
+/internal/browsertest/testdata/traces/
+
+# OS / editor cruft
+**/.DS_Store
 **/*.swp
+
+# Browser-automation output, with the same exceptions as in .gitignore.
+.playwright-mcp/
+**/*.png
+!web/static/apple-touch-icon.png
+!docs/brand/*.png
+!docs/content/images/screenshots/*.png
+
+# Local tool settings and working files.
+.claude/
+docs/superpowers/
+
+# The website's build output, cache, virtualenv and copied-in assets.
+docs/site/
+docs/.cache/
+docs/.venv/
+docs/content/assets/
