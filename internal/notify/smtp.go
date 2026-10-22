@@ -13,6 +13,7 @@ import (
 	"net/mail"
 	"net/smtp"
 	"net/textproto"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -95,7 +96,7 @@ func (s *SMTP) send(ctx context.Context, host, to string, body []byte) error {
 		return err
 	}
 	if err := c.Rcpt(to); err != nil {
-		if permanent(err) {
+		if rejected(err) {
 			return fmt.Errorf("%w: %w", ErrRejected, err)
 		}
 		return err
@@ -116,12 +117,25 @@ func (s *SMTP) send(ctx context.Context, host, to string, body []byte) error {
 	return nil
 }
 
-// permanent reports whether err is a 5xx reply. RFC 5321 asks for a 552 to a
-// recipient to be read as 452: a full mailbox may empty again.
-func permanent(err error) bool {
+// rejected reports whether err is a reply that identifies the recipient as
+// gone: a permanent refusal with an enhanced status in the address class,
+// 5.1.x (RFC 3463), such as "550 5.1.1 User unknown". Any other 5xx stays
+// retried, since relays answer policy refusals at RCPT TO as well, for
+// instance "554 5.7.1 Relay access denied" from a relay that no longer trusts
+// this host: dropping those would lose every notice. 5.1.0 is left out, as
+// Postfix uses it for a rejected sender.
+func rejected(err error) bool {
 	var tp *textproto.Error
-	return errors.As(err, &tp) && tp.Code >= 500 && tp.Code < 600 && tp.Code != 552
+	if !errors.As(err, &tp) || tp.Code < 500 || tp.Code > 599 {
+		return false
+	}
+	m := enhancedStatus.FindStringSubmatch(tp.Msg)
+	return m != nil && m[1] != "0"
 }
+
+// enhancedStatus matches an RFC 3463 address-status code at the start of a
+// reply, capturing its detail.
+var enhancedStatus = regexp.MustCompile(`^5\.1\.(\d{1,3})(?:\s|$)`)
 
 // buildMessage writes msg as an RFC 5322 message.
 //

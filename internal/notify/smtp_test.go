@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"io"
 	"mime"
@@ -125,10 +126,12 @@ func TestBuildMessageRefusesALineBreakInAnAddress(t *testing.T) {
 type fakeRelay struct {
 	addr string
 
-	// replies overrides the answer to a command, by verb.
+	// replies overrides the answer to a command, by verb. A multi-line reply
+	// is written as given, so EHLO can advertise extensions.
 	replies map[string]string
 
 	mu   sync.Mutex
+	auth string
 	from string
 	to   []string
 	data []byte
@@ -171,6 +174,11 @@ func (r *fakeRelay) serve(conn net.Conn) {
 		switch verb {
 		case "EHLO", "HELO":
 			reply("250 relay")
+		case "AUTH":
+			r.mu.Lock()
+			r.auth = cmd
+			r.mu.Unlock()
+			reply("235 2.7.0 authenticated")
 		case "MAIL":
 			r.mu.Lock()
 			r.from = cmd
@@ -251,17 +259,29 @@ func TestNotifyReportsAnUnreachableRelay(t *testing.T) {
 	}
 }
 
-// A permanent refusal of the recipient is ErrRejected, so the reminder stops
-// retrying it. A temporary one, or a full mailbox, is not.
+// A reply that identifies the recipient as gone is ErrRejected, so the
+// reminder stops retrying it. Anything else is not: a temporary failure, a
+// full mailbox, a 5xx with no enhanced status, and a policy refusal. Relays
+// answer those at RCPT TO too, and they mean the relay is misconfigured, not
+// that the user is gone, so they must stay retried or every notice would be
+// dropped.
 func TestNotifyReportsARejectedRecipient(t *testing.T) {
 	for _, tc := range []struct {
 		reply    string
 		rejected bool
 	}{
 		{"550 5.1.1 user unknown", true},
+		{"550 5.1.1 <u1@uni.de>: Recipient address rejected: User unknown in local recipient table", true},
 		{"553 5.1.3 mailbox name not allowed", true},
+		{"550 5.1.6 mailbox has moved", true},
+		{"550 5.1.0 sender address rejected", false},
+		{"550 user unknown", false},
 		{"552 5.2.2 mailbox full", false},
 		{"450 4.2.0 try again later", false},
+		{"450 4.1.1 user unknown, try again", false},
+		{"554 5.7.1 relay access denied", false},
+		{"554 5.7.1 client host rejected", false},
+		{"550 5.7.23 SPF validation failed", false},
 	} {
 		t.Run(tc.reply, func(t *testing.T) {
 			relay := newFakeRelay(t, map[string]string{"RCPT": tc.reply})
@@ -277,10 +297,9 @@ func TestNotifyReportsARejectedRecipient(t *testing.T) {
 	}
 }
 
-// A refused sender means the relay is misconfigured, not that the recipient
-// is gone: it must stay retried, or every notice would be dropped.
+// A refused sender means the relay is misconfigured: it must stay retried.
 func TestNotifyRetriesARefusedSender(t *testing.T) {
-	relay := newFakeRelay(t, map[string]string{"MAIL": "554 5.7.1 relay access denied"})
+	relay := newFakeRelay(t, map[string]string{"MAIL": "550 5.1.0 sender address rejected"})
 	s := &SMTP{Host: relay.addr, From: "noreply@uni-osnabrueck.de"}
 	err := s.Notify(context.Background(), expiryNotice())
 	if err == nil {
@@ -288,6 +307,69 @@ func TestNotifyRetriesARefusedSender(t *testing.T) {
 	}
 	if errors.Is(err, ErrRejected) {
 		t.Errorf("refused sender reported as ErrRejected: %v", err)
+	}
+}
+
+// ehloWithAuth is an EHLO reply from a relay that wants a login.
+const ehloWithAuth = "250-relay\r\n250 AUTH PLAIN LOGIN"
+
+// With credentials set, Notify logs in with PLAIN before sending.
+func TestNotifyAuthenticatesWhenConfigured(t *testing.T) {
+	relay := newFakeRelay(t, map[string]string{"EHLO": ehloWithAuth})
+	s := &SMTP{Host: relay.addr, From: "noreply@uni-osnabrueck.de", Username: "keyosk", Password: "s3cret"}
+	if err := s.Notify(context.Background(), expiryNotice()); err != nil {
+		t.Fatal(err)
+	}
+	relay.mu.Lock()
+	defer relay.mu.Unlock()
+	want := "AUTH PLAIN " + base64.StdEncoding.EncodeToString([]byte("\x00keyosk\x00s3cret"))
+	if relay.auth != want {
+		t.Errorf("relay got %q, want %q", relay.auth, want)
+	}
+	if len(relay.to) != 1 {
+		t.Errorf("relay got %d recipients after login, want 1", len(relay.to))
+	}
+}
+
+// Without credentials no login is attempted, even when the relay offers one:
+// a relay inside the network trusts the host instead.
+func TestNotifySkipsAuthWithoutCredentials(t *testing.T) {
+	relay := newFakeRelay(t, map[string]string{"EHLO": ehloWithAuth})
+	s := &SMTP{Host: relay.addr, From: "noreply@uni-osnabrueck.de"}
+	if err := s.Notify(context.Background(), expiryNotice()); err != nil {
+		t.Fatal(err)
+	}
+	relay.mu.Lock()
+	defer relay.mu.Unlock()
+	if relay.auth != "" {
+		t.Errorf("relay got %q without credentials configured", relay.auth)
+	}
+}
+
+// A refused login, or a relay that offers no AUTH to a configured login, is
+// an error of the relay setup, and is never ErrRejected.
+func TestNotifyReportsAFailedLogin(t *testing.T) {
+	for name, replies := range map[string]map[string]string{
+		"refused":   {"EHLO": ehloWithAuth, "AUTH": "535 5.7.8 authentication failed"},
+		"no auth":   {},
+		"helo only": {"EHLO": "502 command not implemented"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			relay := newFakeRelay(t, replies)
+			s := &SMTP{Host: relay.addr, From: "noreply@uni-osnabrueck.de", Username: "keyosk", Password: "wrong"}
+			err := s.Notify(context.Background(), expiryNotice())
+			if err == nil {
+				t.Fatal("Notify reported success")
+			}
+			if errors.Is(err, ErrRejected) {
+				t.Errorf("login failure reported as ErrRejected: %v", err)
+			}
+			relay.mu.Lock()
+			defer relay.mu.Unlock()
+			if len(relay.to) != 0 {
+				t.Errorf("relay got a recipient after a failed login")
+			}
+		})
 	}
 }
 
