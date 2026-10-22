@@ -185,6 +185,13 @@ func TestUsersFilter(t *testing.T) {
 	check(t, expect.Locator(noMatch).ToBeVisible())
 	check(t, expect.Locator(userRow(page, "intern")).ToBeHidden())
 
+	// Every word has to appear, in any order: "small intern" finds the intern
+	// on the Small only profile, although the profile follows the address.
+	check(t, box.Fill("small intern"))
+	check(t, expect.Locator(userRow(page, "intern")).ToBeVisible())
+	check(t, expect.Locator(userRow(page, "nokey")).ToBeHidden())
+	check(t, expect.Locator(noMatch).ToBeHidden())
+
 	check(t, box.Fill(""))
 	check(t, expect.Locator(userRow(page, "intern")).ToBeVisible())
 	check(t, expect.Locator(userRow(page, "nokey")).ToBeVisible())
