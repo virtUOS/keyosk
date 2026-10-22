@@ -530,10 +530,11 @@ function filterCandidates(q) {
 }
 
 // The filter boxes above the users and the audit log hide the rows that do
-// not contain what is typed. Each row's text is gathered once, from its cells
-// without the row menu, whose entries ("Edit", "Revoke key") would otherwise
-// match every row. Not from innerText: a hidden row's innerText falls back to
-// the raw text, menu included.
+// not contain every word typed, in any order, so "alice revoked" finds what
+// happened to Alice without knowing which column comes first. Each row's text
+// is gathered once, from its cells without the row menu, whose entries
+// ("Edit", "Revoke key") would otherwise match every row. Not from innerText:
+// a hidden row's innerText falls back to the raw text, menu included.
 function rowText(tr) {
   return Array.from(tr.cells).filter(td => !td.classList.contains('cell-menu'))
     .map(td => td.textContent).join(' ').replace(/\s+/g, ' ').toLowerCase();
@@ -544,10 +545,10 @@ document.querySelectorAll('.table-filter').forEach(input => {
   const rows = Array.from(tbody.rows).filter(r => !r.classList.contains('empty-row'))
     .map(r => [r, rowText(r)]);
   const apply = () => {
-    const q = input.value.trim().replace(/\s+/g, ' ').toLowerCase();
+    const words = input.value.toLowerCase().split(/\s+/).filter(Boolean);
     let shown = 0;
     for (const [r, text] of rows) {
-      r.hidden = !text.includes(q);
+      r.hidden = !words.every(w => text.includes(w));
       if (!r.hidden) shown++;
     }
     noMatch.hidden = shown > 0 || rows.length === 0;

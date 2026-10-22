@@ -21,8 +21,8 @@ The admin panel at `/admin` provides:
   actor.
 
   The users and the audit log each have a filter box that narrows the table to
-  the rows containing what you type. It searches what the page holds, so on
-  the audit log only those 500 changes.
+  the rows containing every word you type, in any order. It searches what the
+  page holds, so on the audit log only those 500 changes.
 - **Limit sync status** — a card above the tabs says whether all keys
   carry their profile's current limits yet. If not, it shows how many are still
   waiting, whether an update is running, which keys failed and why, and each
