@@ -198,10 +198,10 @@ func TestCurlExampleDoesNotEmbedTheKey(t *testing.T) {
 	}
 	out := buf.String()
 
-	if !strings.Contains(out, "$OPENAI_API_KEY") {
+	if !strings.Contains(out, "$LLM_API_KEY") {
 		t.Error("curl example does not read the key from the environment")
 	}
-	if !strings.Contains(out, `os.environ[\"OPENAI_API_KEY\"]`) {
+	if !strings.Contains(out, `os.environ[\"LLM_API_KEY\"]`) {
 		t.Error("Python example does not read the key from the environment")
 	}
 	// The freshly issued key is shown once in its own box; it must not also be

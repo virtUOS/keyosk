@@ -135,7 +135,7 @@ var messages = map[string]map[Lang]string{
 	"dash.col.total":          {DE: "Gesamt", EN: "Total"},
 	"dash.models.help":        {DE: "Die Modelle, die Ihr Schlüssel verwenden darf. Klicken Sie auf ein Modell, um den Namen zu kopieren — das Beispiel darunter wechselt zu diesem Modell.", EN: "The models your key may use. Click one to copy its name; the example below switches to it."},
 	"dash.models.curltitle":   {DE: "Beispielanfrage für", EN: "Example request for"},
-	"dash.models.curlnote":    {DE: "Der Schlüssel wird aus der Umgebungsvariablen OPENAI_API_KEY gelesen — setzen Sie sie zuerst, damit er weder im Code noch in der Shell-History landet.", EN: "The key is read from the OPENAI_API_KEY environment variable — set it first so it stays out of your code and shell history."},
+	"dash.models.curlnote":    {DE: "Der Schlüssel wird aus der Umgebungsvariablen LLM_API_KEY gelesen — setzen Sie sie zuerst, damit er weder im Code noch in der Shell-History landet.", EN: "The key is read from the LLM_API_KEY environment variable — set it first so it stays out of your code and shell history."},
 	"dash.baseurl.help":       {DE: "Richten Sie Ihren KI-Client auf diese Adresse und hinterlegen Sie Ihren API-Schlüssel. Die Schnittstelle ist OpenAI-kompatibel, funktioniert also mit den üblichen Werkzeugen.", EN: "Point your AI client at this address and give it your API key. It speaks the OpenAI API, so any OpenAI-compatible tool works."},
 
 	"dash.confirm.regenerate": {DE: "Damit wird Ihr aktueller Schlüssel ungültig und ein neuer erzeugt. Fortfahren?", EN: "This will revoke your current key and generate a new one. Continue?"},
