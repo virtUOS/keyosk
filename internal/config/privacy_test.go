@@ -16,6 +16,11 @@ func setRequiredEnv(t *testing.T) {
 	t.Setenv("LITELLM_BASE_URL", "https://example.invalid")
 	t.Setenv("LITELLM_MASTER_KEY", "sk-x")
 	t.Setenv("FRONTEND_URL", "https://example.invalid")
+	// Startup refuses obsolete settings, which a developer's shell may still
+	// export.
+	for _, s := range obsoleteSettings {
+		t.Setenv(s.name, "")
+	}
 }
 
 func writeFile(t *testing.T, name, content string) string {

@@ -148,13 +148,8 @@ func main() {
 		slog.Warn("the default profile has no usage limit: every user without a profile of their own can spend without a cap; set a quota in the admin panel", "profile", def.Name)
 	}
 
-	// An operator who still sets a setting an older version read would
-	// otherwise not know it has no effect. Admin rights in particular are
-	// recorded on the account (issue #107): with the old settings, or no first
+	// Admin rights are recorded on the account (issue #107): with no first
 	// admin marked yet, nobody can reach the panel.
-	for _, s := range cfg.ObsoleteSettings {
-		slog.Warn("setting is no longer read: "+s.Reason, "setting", s.Name)
-	}
 	if cfg.AdminFromGroups() {
 		// Nobody holds the flag until a member of the group logs in, so a
 		// count would only raise a false alarm here.

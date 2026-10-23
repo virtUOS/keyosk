@@ -1,44 +1,33 @@
 package config
 
 import (
-	"slices"
+	"strings"
 	"testing"
 )
 
-// The settings that used to grant the admin panel are no longer read. An
-// operator who still sets them must be told, or an upgrade silently leaves
-// them with no admins and no idea why.
-func TestLoadReportsObsoleteAdminSettings(t *testing.T) {
+// An operator who still sets a setting an older version read expects behaviour
+// Keyosk no longer has. Startup fails and names every one that is set, with
+// what replaced it, so they can all be removed at once. An emptied line in an
+// env file counts as unset.
+func TestLoadRefusesObsoleteSettings(t *testing.T) {
 	setRequiredEnv(t)
 	t.Setenv("ADMIN_IDS", "sub-1")
-	t.Setenv("ADMIN_EMAILS", "")
-	t.Setenv("ADMIN_ROLE", "ai-admin")
+	t.Setenv("ADMIN_EMAILS", " ")
+	t.Setenv("COOKIE_SECURE", "true")
 
-	cfg, err := Load()
-	if err != nil {
-		t.Fatal(err)
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load succeeded, want an error")
 	}
-	var got []string
-	for _, s := range cfg.ObsoleteSettings {
-		got = append(got, s.Name)
+	for _, want := range []string{
+		"ADMIN_IDS (" + adminRecordedOnAccount + ")",
+		"COOKIE_SECURE (cookies are secure when FRONTEND_URL is https)",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not name %s", err, want)
+		}
 	}
-	if !slices.Equal(got, []string{"ADMIN_IDS", "ADMIN_ROLE"}) {
-		t.Errorf("ObsoleteSettings = %v, want the two that are set", got)
-	}
-}
-
-// A clean deployment has nothing to be warned about.
-func TestLoadReportsNoObsoleteSettingsWhenUnset(t *testing.T) {
-	setRequiredEnv(t)
-	for _, s := range obsoleteSettings {
-		t.Setenv(s.Name, "")
-	}
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(cfg.ObsoleteSettings) != 0 {
-		t.Errorf("ObsoleteSettings = %v, want none", cfg.ObsoleteSettings)
+	if strings.Contains(err.Error(), "ADMIN_EMAILS") {
+		t.Errorf("error %q names ADMIN_EMAILS, which is blank", err)
 	}
 }
