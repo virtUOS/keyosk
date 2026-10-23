@@ -57,10 +57,6 @@ type Config struct {
 	// roles are realm_access.roles.
 	AdminGroupClaim string
 
-	// ObsoleteSettings are the settings that are set in the environment but
-	// no longer read, so startup can say so and what replaced them.
-	ObsoleteSettings []ObsoleteSetting
-
 	DBPath string
 
 	// SMTPHost enables expiry emails when set (host:port). Without it the
@@ -128,18 +124,13 @@ type Config struct {
 	TrustedProxies []netip.Prefix
 }
 
-// ObsoleteSetting is a setting that is no longer read, with what replaced it.
-type ObsoleteSetting struct {
-	Name   string
-	Reason string
-}
-
 // obsoleteSettings are the settings an operator may still set from an older
-// version. Admin rights used to come from ADMIN_IDS, ADMIN_EMAILS and
-// ADMIN_ROLE; they are recorded on the account now (issue #107), and an
-// operator who still sets these would otherwise find nobody is an admin and
-// not know why.
-var obsoleteSettings = []ObsoleteSetting{
+// version, with what replaced them. Load refuses to start while any of them is
+// set: the operator expects behaviour Keyosk no longer has, and a warning in
+// the startup log is easily missed. With ADMIN_IDS left over from before admin
+// rights were recorded on the account (issue #107), nobody would be an admin,
+// and the first to notice would be someone who can't reach the panel.
+var obsoleteSettings = []struct{ name, reason string }{
 	{"ADMIN_IDS", adminRecordedOnAccount},
 	{"ADMIN_EMAILS", adminRecordedOnAccount},
 	{"ADMIN_ROLE", adminRecordedOnAccount},
@@ -157,6 +148,12 @@ var defaultTrustedProxies = []string{
 }
 
 func Load() (*Config, error) {
+	// Checked first, so that the reason for an old setting comes before any
+	// complaint about the setting that replaced it.
+	if err := checkObsoleteSettings(); err != nil {
+		return nil, err
+	}
+
 	cfg := &Config{
 		LiteLLMBaseURL:   requireEnv("LITELLM_BASE_URL"),
 		LiteLLMMasterKey: requireEnv("LITELLM_MASTER_KEY"),
@@ -207,12 +204,6 @@ func Load() (*Config, error) {
 		claim = "groups"
 	}
 	cfg.AdminGroupClaim = claim
-
-	for _, s := range obsoleteSettings {
-		if strings.TrimSpace(os.Getenv(s.Name)) != "" {
-			cfg.ObsoleteSettings = append(cfg.ObsoleteSettings, s)
-		}
-	}
 
 	cfg.FrontendURL, err = frontendRoot(cfg.FrontendURL)
 	if err != nil {
@@ -281,6 +272,22 @@ func Load() (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// checkObsoleteSettings returns an error naming every obsolete setting that is
+// set, each with what replaced it, so they can all be removed in one go. An
+// empty value counts as unset, so an emptied line in an env file is fine.
+func checkObsoleteSettings() error {
+	var set []string
+	for _, s := range obsoleteSettings {
+		if strings.TrimSpace(os.Getenv(s.name)) != "" {
+			set = append(set, s.name+" ("+s.reason+")")
+		}
+	}
+	if len(set) == 0 {
+		return nil
+	}
+	return fmt.Errorf("settings that are no longer read are set, remove them: %s", strings.Join(set, "; "))
 }
 
 // parseTrustedProxies reads a comma-separated list of CIDRs or single IPs.
@@ -357,11 +364,6 @@ func (c *Config) LiteLLMUser(sub, name, email string) keyprovider.User {
 	return u
 }
 
-// readNotice reads a privacy notice file, or nothing when no path is given.
-//
-// A named file that is missing or blank is an error rather than no notice: the
-// operator asked for the page, and a typo in the path would otherwise remove it
-// without anyone noticing.
 // AdminFromGroups reports whether admin rights come from the login system's
 // group claim rather than from the panel.
 func (c *Config) AdminFromGroups() bool { return c.AdminGroup != "" }
@@ -391,6 +393,11 @@ func frontendRoot(raw string) (string, error) {
 	return root, nil
 }
 
+// readNotice reads a privacy notice file, or nothing when no path is given.
+//
+// A named file that is missing or blank is an error rather than no notice: the
+// operator asked for the page, and a typo in the path would otherwise remove it
+// without anyone noticing.
 func readNotice(path string) (string, error) {
 	if path == "" {
 		return "", nil
