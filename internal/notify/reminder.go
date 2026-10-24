@@ -21,6 +21,9 @@ var DefaultThresholds = []int{14, 3, 1}
 // ones. The validity counts from when the date was last set.
 const relevantShare = 0.8
 
+// recordTimeout bounds recording a sent notice, which outlives a shutdown.
+const recordTimeout = 10 * time.Second
+
 // Reminder warns users whose keys are close to expiring.
 type Reminder struct {
 	store    *database.Store
@@ -69,7 +72,9 @@ func (r *Reminder) Run(ctx context.Context) error {
 				// expires, so record it as done.
 				slog.Warn("expiry notice rejected by the relay, not retrying",
 					"email", k.Email, "key_prefix", k.KeyPrefix, "days", days, "err", err)
-			case ctx.Err() != nil:
+			case err != nil && ctx.Err() != nil:
+				// Cut off by a shutdown. A mail that did go out is recorded
+				// below.
 				return ctx.Err()
 			case err != nil:
 				// Leave the notice unrecorded so the next run retries.
@@ -79,17 +84,16 @@ func (r *Reminder) Run(ctx context.Context) error {
 				metrics.JobItemFailed(metrics.JobExpiryReminder)
 				continue
 			}
-			if err := r.store.MarkExpiryNoticeSent(ctx, k.ID, days); err != nil {
-				if ctx.Err() != nil {
-					return ctx.Err()
-				}
+			// The wider notices are stale now; without a record a later
+			// threshold in this run would mail the key again. The mail is
+			// out, so a shutdown must not cut the record short and have the
+			// next run send it again.
+			rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), recordTimeout)
+			err = r.store.MarkExpiryNoticeSent(rctx, k.ID, days, r.thresholds[i+1:]...)
+			cancel()
+			if err != nil {
 				slog.Error("record expiry notice", "key_id", k.ID, "err", err)
 				metrics.JobItemFailed(metrics.JobExpiryReminder)
-			}
-			// The wider notices are stale now; without a record a later
-			// threshold in this run would mail the key again.
-			if err := r.store.SkipExpiryNotices(ctx, k.ID, r.thresholds[i+1:]...); err != nil {
-				slog.Error("skip wider expiry notices", "key_id", k.ID, "err", err)
 			}
 		}
 	}

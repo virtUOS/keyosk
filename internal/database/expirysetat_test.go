@@ -81,8 +81,9 @@ func TestExpirySetAtFollowsCreateAndExtend(t *testing.T) {
 	}
 }
 
-// Skipping notices records them and leaves ones already sent alone.
-func TestSkipExpiryNoticesIgnoresRecordedOnes(t *testing.T) {
+// Recording a notice records the superseded ones with it and leaves ones
+// already recorded alone.
+func TestMarkExpiryNoticeSentRecordsSupersededOnes(t *testing.T) {
 	s := migratedStore(t, "esa3")
 	ctx := context.Background()
 	u, _ := s.GetOrCreateUser(ctx, "s1", "a@b.c", "A")
@@ -95,11 +96,8 @@ func TestSkipExpiryNoticesIgnoresRecordedOnes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := s.SkipExpiryNotices(ctx, k.ID, 3, 14); err != nil {
-		t.Fatalf("skip with one notice already recorded: %v", err)
-	}
-	if err := s.SkipExpiryNotices(ctx, k.ID); err != nil {
-		t.Fatalf("skip nothing: %v", err)
+	if err := s.MarkExpiryNoticeSent(ctx, k.ID, 3, 14); err != nil {
+		t.Fatalf("mark with a superseded notice already recorded: %v", err)
 	}
 	for _, d := range []int{14, 3} {
 		if rows, err := s.KeysExpiringWithin(ctx, d); err != nil || len(rows) != 0 {
