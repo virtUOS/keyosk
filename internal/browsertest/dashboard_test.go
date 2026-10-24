@@ -169,6 +169,9 @@ func TestModelChipCopiesName(t *testing.T) {
 	click(t, chip)
 	check(t, expect.Locator(chip).ToHaveText("Copied!"))
 	check(t, expect.Locator(page.Locator("#curl-model")).ToHaveText("mock-large"))
+	// A chat example caps the answer, so that LiteLLM does not hold the
+	// model's whole output limit against a small budget.
+	check(t, expect.Locator(page.Locator("#curl-code")).ToContainText(`"max_tokens": `))
 	clip, err := page.Evaluate("navigator.clipboard.readText()")
 	check(t, err)
 	if clip != "mock-large" {
