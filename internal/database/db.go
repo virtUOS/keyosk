@@ -929,29 +929,17 @@ func (s *Store) KeysExpiringWithin(ctx context.Context, daysBefore int) ([]Expir
 	return rows, err
 }
 
-// MarkExpiryNoticeSent records a delivered warning. A notice already recorded,
-// by a concurrent run or as skipped, is left alone.
-func (s *Store) MarkExpiryNoticeSent(ctx context.Context, keyID int64, daysBefore int) error {
-	_, err := s.db.NewInsert().Model(&ExpiryNotice{
-		APIKeyID:   keyID,
-		DaysBefore: daysBefore,
-		SentAt:     time.Now(),
-	}).On("CONFLICT (api_key_id, days_before) DO NOTHING").Exec(ctx)
-	return err
-}
-
-// SkipExpiryNotices records notices for daysBefore as sent without a mail, so
-// the reminder does not send them later. Their sent_at is when a narrower
-// notice superseded them, not a delivery. Notices already recorded are left
-// alone.
-func (s *Store) SkipExpiryNotices(ctx context.Context, keyID int64, daysBefore ...int) error {
-	if len(daysBefore) == 0 {
-		return nil
-	}
+// MarkExpiryNoticeSent records a delivered warning for daysBefore, and the
+// superseded ones as sent without a mail, so the reminder does not send them
+// later. Their sent_at is when the delivered notice superseded them, not a
+// delivery. It is one statement, so either all are recorded or none: a lost
+// supersession would let a stale, wider notice go out after the urgent one.
+// Notices already recorded, by a concurrent run or before, are left alone.
+func (s *Store) MarkExpiryNoticeSent(ctx context.Context, keyID int64, daysBefore int, superseded ...int) error {
 	now := time.Now()
-	notices := make([]ExpiryNotice, len(daysBefore))
-	for i, d := range daysBefore {
-		notices[i] = ExpiryNotice{APIKeyID: keyID, DaysBefore: d, SentAt: now}
+	notices := []ExpiryNotice{{APIKeyID: keyID, DaysBefore: daysBefore, SentAt: now}}
+	for _, d := range superseded {
+		notices = append(notices, ExpiryNotice{APIKeyID: keyID, DaysBefore: d, SentAt: now})
 	}
 	_, err := s.db.NewInsert().Model(&notices).
 		On("CONFLICT (api_key_id, days_before) DO NOTHING").Exec(ctx)
