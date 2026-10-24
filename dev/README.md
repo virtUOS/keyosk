@@ -42,7 +42,7 @@ starts by default, and `.env.example` is preset for it.
 
 Use the **mock** for everyday iteration where login is just a step on the way
 to something else. It is quicker and needs no realm import, but it serves no
-back-channel logout endpoint, so the `/logout/backchannel` path cannot be
+back-channel logout endpoint, so the `/backchannel-logout` path cannot be
 exercised against it.
 
 Use **Keycloak** when touching anything auth-shaped, and to reproduce
@@ -211,7 +211,7 @@ tests.
 ## Automated tests
 
 `go test ./...` needs none of this. The auth-path tests run an in-process
-issuer (`internal/oidc/mockprovider_test.go`) shaped like the university's
+issuer (`internal/oidc/oidctest`) shaped like the university's
 Keycloak: same endpoint layout, same claims, back-channel logout.
 
 The LiteLLM end-to-end tests run against the gateway above, and are built only

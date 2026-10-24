@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/virtuos/keyosk/internal/oidc/oidctest"
 )
@@ -113,7 +114,7 @@ func TestBackchannelLogoutEndsTheSubjectsSessions(t *testing.T) {
 	phone := sessionCookie(t, lt.login(t, oidctest.Claims{Sub: "sub-1", Email: "a@uni-osnabrueck.de"}))
 	other := sessionCookie(t, lt.login(t, oidctest.Claims{Sub: "sub-2", Email: "b@uni-osnabrueck.de"}))
 
-	rec := lt.backchannelLogout(lt.idp.SignLogoutToken(t, "sub-1", "keyosk", false))
+	rec := lt.backchannelLogout(lt.idp.SignLogoutToken(t, oidctest.NewLogoutToken("sub-1", "keyosk")))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("back-channel logout answered %d, want 200", rec.Code)
@@ -126,15 +127,22 @@ func TestBackchannelLogoutEndsTheSubjectsSessions(t *testing.T) {
 	}
 }
 
-// A token the provider would not send as a logout, or one for another client,
-// ends nothing.
+// A token the provider would not send as a logout, one for another client, or
+// an old one posted again ends nothing.
 func TestBackchannelLogoutRejectsABadToken(t *testing.T) {
 	lt := newLoginTest(t, "logout4")
 	cookie := sessionCookie(t, lt.login(t, oidctest.Claims{Sub: "sub-1", Email: "a@uni-osnabrueck.de"}))
+	withClaims := func(claims map[string]any) string {
+		tok := oidctest.NewLogoutToken("sub-1", "keyosk")
+		tok.Claims = claims
+		return lt.idp.SignLogoutToken(t, tok)
+	}
+	hourAgo := time.Now().Add(-time.Hour)
 
 	for name, token := range map[string]string{
-		"with a nonce":       lt.idp.SignLogoutToken(t, "sub-1", "keyosk", true),
-		"for another client": lt.idp.SignLogoutToken(t, "sub-1", "another-client", false),
+		"with a nonce":       withClaims(map[string]any{"nonce": "must-not-be-here"}),
+		"for another client": lt.idp.SignLogoutToken(t, oidctest.NewLogoutToken("sub-1", "another-client")),
+		"replayed later":     withClaims(map[string]any{"iat": hourAgo.Unix(), "exp": hourAgo.Add(2 * time.Minute).Unix()}),
 		"not a token":        "junk",
 	} {
 		if rec := lt.backchannelLogout(token); rec.Code != http.StatusBadRequest {
@@ -158,7 +166,7 @@ func TestSessionStatus(t *testing.T) {
 	if rec := request(lt.ui.SessionStatus, http.MethodGet, "/session/status", nil); rec.Code != http.StatusUnauthorized {
 		t.Errorf("without a cookie: %d, want 401", rec.Code)
 	}
-	lt.backchannelLogout(lt.idp.SignLogoutToken(t, "sub-1", "keyosk", false))
+	lt.backchannelLogout(lt.idp.SignLogoutToken(t, oidctest.NewLogoutToken("sub-1", "keyosk")))
 	if rec := request(lt.ui.SessionStatus, http.MethodGet, "/session/status", cookie); rec.Code != http.StatusUnauthorized {
 		t.Errorf("after a back-channel logout: %d, want 401", rec.Code)
 	}

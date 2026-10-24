@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/virtuos/keyosk/internal/config"
 	"github.com/virtuos/keyosk/internal/database"
 	"github.com/virtuos/keyosk/internal/i18n"
@@ -324,6 +325,15 @@ func (u *UI) BackchannelLogout(w http.ResponseWriter, r *http.Request) {
 	rawToken := r.FormValue("logout_token")
 	sub, err := u.oidc.ValidateLogoutToken(r.Context(), rawToken)
 	if err != nil {
+		// A refused token from the IdP leaves its user signed in here; a
+		// clock that runs off shows up only in this log. Anyone can post a
+		// token that does not verify, so those stay below Warn.
+		level := slog.LevelWarn
+		if errors.Is(err, oidcpkg.ErrLogoutTokenUnverified) {
+			level = slog.LevelInfo
+		}
+		slog.Log(r.Context(), level, "backchannel logout: refused token",
+			"err", err, "client", middleware.GetClientIP(r.Context()))
 		http.Error(w, "invalid logout token", http.StatusBadRequest)
 		return
 	}
