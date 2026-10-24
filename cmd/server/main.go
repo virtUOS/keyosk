@@ -231,8 +231,12 @@ func main() {
 		slog.Warn("SMTP_HOST unset: expiry notifications will not be delivered")
 	}
 	reminderCtx, stopReminder := context.WithCancel(context.Background())
-	go notify.NewReminder(store, notifier, cfg.FrontendURL, nil).
-		Start(reminderCtx, 6*time.Hour)
+	reminderDone := make(chan struct{})
+	go func() {
+		defer close(reminderDone)
+		notify.NewReminder(store, notifier, cfg.FrontendURL, nil).
+			Start(reminderCtx, 6*time.Hour)
+	}()
 
 	// Revert expired profile assignments. Every 15 minutes rather than hourly:
 	// a deadline an admin set for a particular date should take effect near
@@ -315,6 +319,9 @@ func main() {
 	// not closed under it; anything not reached stays pending for next time.
 	stopSync()
 	<-syncDone
+	// The reminder records a mail that went out despite the shutdown; wait
+	// for that too. It was stopped before the server, so this is short.
+	<-reminderDone
 }
 
 // fatal logs err at error level and exits. log.Fatal would go through slog's

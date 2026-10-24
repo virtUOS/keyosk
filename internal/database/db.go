@@ -904,6 +904,10 @@ func (s *Store) CountAPIKeys(ctx context.Context, withinDays int) (total, expiri
 // KeysExpiringWithin returns keys expiring in the next window that have not yet
 // had a notice recorded for daysBefore, joined to their owner.
 //
+// A notice for a narrower threshold counts as well: once a key was told it
+// expires tomorrow, a wider "expires in 3 days" is stale. A key inside several
+// windows, for instance after downtime, so gets only the most urgent notice.
+//
 // Already-expired keys are excluded: a warning after the fact is noise, and the
 // user has already discovered the problem.
 func (s *Store) KeysExpiringWithin(ctx context.Context, daysBefore int) ([]ExpiringKey, error) {
@@ -923,37 +927,20 @@ func (s *Store) KeysExpiringWithin(ctx context.Context, daysBefore int) ([]Expir
 		Where("api_key.missing_since IS NULL").
 		Where(`NOT EXISTS (
 			SELECT 1 FROM expiry_notices n
-			WHERE n.api_key_id = api_key.id AND n.days_before = ?
+			WHERE n.api_key_id = api_key.id AND n.days_before <= ?
 		)`, daysBefore).
 		Scan(ctx, &rows)
 	return rows, err
 }
 
-// MarkExpiryNoticeSent records a delivered warning. A notice already recorded,
-// by a concurrent run or as skipped, is left alone.
+// MarkExpiryNoticeSent records a delivered warning. It also covers the wider
+// thresholds, see KeysExpiringWithin. A notice already recorded, by a
+// concurrent run, is left alone.
 func (s *Store) MarkExpiryNoticeSent(ctx context.Context, keyID int64, daysBefore int) error {
 	_, err := s.db.NewInsert().Model(&ExpiryNotice{
 		APIKeyID:   keyID,
 		DaysBefore: daysBefore,
 		SentAt:     time.Now(),
 	}).On("CONFLICT (api_key_id, days_before) DO NOTHING").Exec(ctx)
-	return err
-}
-
-// SkipExpiryNotices records notices for daysBefore as sent without a mail, so
-// the reminder does not send them later. Their sent_at is when a narrower
-// notice superseded them, not a delivery. Notices already recorded are left
-// alone.
-func (s *Store) SkipExpiryNotices(ctx context.Context, keyID int64, daysBefore ...int) error {
-	if len(daysBefore) == 0 {
-		return nil
-	}
-	now := time.Now()
-	notices := make([]ExpiryNotice, len(daysBefore))
-	for i, d := range daysBefore {
-		notices[i] = ExpiryNotice{APIKeyID: keyID, DaysBefore: d, SentAt: now}
-	}
-	_, err := s.db.NewInsert().Model(&notices).
-		On("CONFLICT (api_key_id, days_before) DO NOTHING").Exec(ctx)
 	return err
 }

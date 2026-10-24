@@ -81,8 +81,9 @@ func TestExpirySetAtFollowsCreateAndExtend(t *testing.T) {
 	}
 }
 
-// Skipping notices records them and leaves ones already sent alone.
-func TestSkipExpiryNoticesIgnoresRecordedOnes(t *testing.T) {
+// A recorded notice also covers the wider thresholds, but not the narrower
+// ones.
+func TestExpiryNoticeCoversWiderThresholds(t *testing.T) {
 	s := migratedStore(t, "esa3")
 	ctx := context.Background()
 	u, _ := s.GetOrCreateUser(ctx, "s1", "a@b.c", "A")
@@ -91,16 +92,10 @@ func TestSkipExpiryNoticesIgnoresRecordedOnes(t *testing.T) {
 	if err := s.ReplaceAPIKey(ctx, k); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.MarkExpiryNoticeSent(ctx, k.ID, 14); err != nil {
+	if err := s.MarkExpiryNoticeSent(ctx, k.ID, 3); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := s.SkipExpiryNotices(ctx, k.ID, 3, 14); err != nil {
-		t.Fatalf("skip with one notice already recorded: %v", err)
-	}
-	if err := s.SkipExpiryNotices(ctx, k.ID); err != nil {
-		t.Fatalf("skip nothing: %v", err)
-	}
 	for _, d := range []int{14, 3} {
 		if rows, err := s.KeysExpiringWithin(ctx, d); err != nil || len(rows) != 0 {
 			t.Errorf("%dd: expiring = %+v, err = %v; want the notice recorded", d, rows, err)
