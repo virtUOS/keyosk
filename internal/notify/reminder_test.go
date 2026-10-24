@@ -391,6 +391,28 @@ func TestReminderStopsOnCancelWithoutCountingFailures(t *testing.T) {
 	}
 }
 
+// A shutdown right after a notice went out must still record it, or the next
+// run mails the key again, and end the run with the context's error.
+func TestReminderRecordsASentNoticeDespiteCancel(t *testing.T) {
+	s, db := setup(t, "rem-cancel-sent")
+	k := addKey(t, s, "u1", "u1@uni.de", 30)
+	setRemaining(t, db, k.ID, 12*time.Hour, 30)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	rec := &recorder{onNotify: cancel}
+	err := NewReminder(s, rec, "https://portal", nil).Run(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("Run = %v, want context.Canceled", err)
+	}
+	if rec.count() != 1 {
+		t.Fatalf("sent %d messages, want 1", rec.count())
+	}
+	if p := pending(t, s, k.ID); len(p) != 0 {
+		t.Errorf("notices still pending after the cancel: %v, want all recorded", p)
+	}
+}
+
 // A recipient the relay refuses permanently is recorded, so later runs do not
 // try it again until the key expires.
 func TestReminderDoesNotRetryARejectedRecipient(t *testing.T) {
