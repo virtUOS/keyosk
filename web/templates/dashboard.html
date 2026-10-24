@@ -404,12 +404,18 @@ function copyCurl(btn) {
 // chat model, so the same example cannot serve both: pasting the chat one
 // against bge-m3 just fails. Which is which comes from the gateway rather than
 // the name — see EMBEDDING_MODELS.
+// The chat example sets max_tokens. LiteLLM reserves a request's worst-case
+// cost against the budget until the answer is settled, and without max_tokens
+// that is the model's whole output limit: on a small budget, the next request
+// is refused with "Budget has been exceeded" although little was spent. People
+// copy the example as it is, so it should be the request that avoids this.
 function curlExample(model) {
   const embedding = EMBEDDING_MODELS[model] === true;
   const path = embedding ? "/embeddings" : "/chat/completions";
   const body = embedding
     ? "    \"input\": \"Your text to embed\"\n"
-    : "    \"messages\": [{\"role\": \"user\", \"content\": \"Hello!\"}]\n";
+    : "    \"max_tokens\": 1000,\n" +
+      "    \"messages\": [{\"role\": \"user\", \"content\": \"Hello!\"}]\n";
   return "curl " + BASE_URL + path + " \\\n" +
     "  -H \"Authorization: Bearer $LLM_API_KEY\" \\\n" +
     "  -H \"Content-Type: application/json\" \\\n" +
@@ -421,7 +427,8 @@ function curlExample(model) {
 
 // The same request through the OpenAI Python SDK, which is how most people
 // will script against the gateway. The key comes from the environment for the
-// same reason as above: a secret in a script ends up committed somewhere.
+// same reason as above: a secret in a script ends up committed somewhere, and
+// max_tokens is there for the same reason as in the curl example.
 function pythonExample(model) {
   const embedding = EMBEDDING_MODELS[model] === true;
   const call = embedding
@@ -432,6 +439,7 @@ function pythonExample(model) {
       "print(resp.data[0].embedding[:5])"
     : "resp = client.chat.completions.create(\n" +
       "    model=\"" + model + "\",\n" +
+      "    max_tokens=1000,\n" +
       "    messages=[{\"role\": \"user\", \"content\": \"Hello!\"}],\n" +
       ")\n" +
       "print(resp.choices[0].message.content)";
