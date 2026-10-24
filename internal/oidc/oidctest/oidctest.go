@@ -175,10 +175,15 @@ func (m *Server) Authorize(t *testing.T, authURL string, c Claims) (code, state 
 	return code, q.Get("state")
 }
 
-func (m *Server) signer(t *testing.T) jose.Signer {
+// signer signs with the issuer's key; typ is the JWT typ header, left out
+// when empty.
+func (m *Server) signer(t *testing.T, typ string) jose.Signer {
 	t.Helper()
 	sk := jose.SigningKey{Algorithm: jose.RS256, Key: m.key}
-	opts := (&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", m.keyID)
+	opts := (&jose.SignerOptions{}).WithHeader("kid", m.keyID)
+	if typ != "" {
+		opts = opts.WithType(jose.ContentType(typ))
+	}
 	s, err := jose.NewSigner(sk, opts)
 	if err != nil {
 		t.Fatalf("signer: %v", err)
@@ -212,24 +217,51 @@ func (m *Server) SignIDToken(c Claims, aud string, expiry time.Time) (string, er
 	}).Serialize()
 }
 
-// SignLogoutToken mints a back-channel logout token per the OIDC spec: it
-// carries the backchannel-logout event and must NOT carry a nonce.
-func (m *Server) SignLogoutToken(t *testing.T, sub, aud string, withNonce bool) string {
+// LogoutToken describes a back-channel logout token. NewLogoutToken fills it
+// in as Keycloak sends one; tests change it from there.
+type LogoutToken struct {
+	Sub string
+	Aud string
+	// Typ is the JWT typ header, left out when empty.
+	Typ string
+	// Claims are added to the standard set or replace its claims; a nil
+	// value removes one.
+	Claims map[string]any
+}
+
+// NewLogoutToken describes a logout token for sub and the client aud, typed
+// logout+jwt as Keycloak types it.
+func NewLogoutToken(sub, aud string) LogoutToken {
+	return LogoutToken{Sub: sub, Aud: aud, Typ: "logout+jwt"}
+}
+
+// SignLogoutToken mints a back-channel logout token per the OIDC spec, with
+// the claims Keycloak sends: the backchannel-logout event, sid and jti, no
+// nonce, and an exp two minutes after iat.
+func (m *Server) SignLogoutToken(t *testing.T, lt LogoutToken) string {
 	t.Helper()
+	now := time.Now()
 	claims := map[string]any{
 		"iss": m.server.URL,
-		"sub": sub,
-		"aud": aud,
-		"iat": time.Now().Unix(),
-		"jti": fmt.Sprintf("jti-%d", time.Now().UnixNano()),
+		"sub": lt.Sub,
+		"aud": lt.Aud,
+		"iat": now.Unix(),
+		"exp": now.Add(2 * time.Minute).Unix(),
+		"jti": fmt.Sprintf("jti-%d", now.UnixNano()),
+		"sid": fmt.Sprintf("sid-%s", lt.Sub),
+		"typ": "Logout",
 		"events": map[string]any{
 			"http://schemas.openid.net/event/backchannel-logout": map[string]any{},
 		},
 	}
-	if withNonce {
-		claims["nonce"] = "must-not-be-here"
+	for k, v := range lt.Claims {
+		if v == nil {
+			delete(claims, k)
+		} else {
+			claims[k] = v
+		}
 	}
-	out, err := jwt.Signed(m.signer(t)).Claims(claims).Serialize()
+	out, err := jwt.Signed(m.signer(t, lt.Typ)).Claims(claims).Serialize()
 	if err != nil {
 		t.Fatalf("sign logout token: %v", err)
 	}

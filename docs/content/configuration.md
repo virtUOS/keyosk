@@ -64,3 +64,9 @@ Keyosk acts only on a logout token signed by the provider, but each request
 with a token it cannot verify makes it fetch the provider's signing keys
 again. If your reverse proxy can, allow `/backchannel-logout` only from the
 identity provider's addresses.
+
+A logout token is honoured for at most five minutes after the provider issued
+it, and not after it expires (Keycloak's expire after two), with a minute's
+leeway for clocks that differ. A captured token cannot be posted again later.
+Keep the clocks of Keyosk's host and the provider in sync; Keyosk logs why it
+refused a token.

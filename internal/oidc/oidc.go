@@ -3,14 +3,17 @@ package oidc
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	gooidc "github.com/coreos/go-oidc/v3/oidc"
 	"github.com/virtuos/keyosk/internal/config"
@@ -293,14 +296,52 @@ func (p *Provider) GetOrCreateUser(ctx context.Context, info *UserInfo) (*databa
 	return user, nil
 }
 
+const (
+	// maxLogoutTokenAge bounds how long a captured logout token can be
+	// replayed. Keycloak's tokens expire after two minutes anyway.
+	maxLogoutTokenAge = 5 * time.Minute
+	// logoutTokenSkew is how far the IdP's clock may differ from ours, either
+	// way: a token may be issued this far in the future, and is still
+	// accepted this long after its exp.
+	logoutTokenSkew = time.Minute
+)
+
+// ErrLogoutTokenUnverified marks a logout token that is not signed by the
+// IdP for this client, which anyone can post, as opposed to one the IdP
+// signed but that is refused all the same.
+var ErrLogoutTokenUnverified = errors.New("logout token not verified")
+
 func (p *Provider) ValidateLogoutToken(ctx context.Context, rawToken string) (string, error) {
+	// go-oidc's expiry check refuses a token without exp, which older
+	// versions of the spec did not require of logout tokens. The token's age
+	// is checked below instead.
 	verifier := p.provider.Verifier(&gooidc.Config{
 		ClientID:        p.cfg.OIDCClientID,
 		SkipExpiryCheck: true,
 	})
 	token, err := verifier.Verify(ctx, rawToken)
 	if err != nil {
-		return "", fmt.Errorf("verify logout token: %w", err)
+		return "", fmt.Errorf("%w: %w", ErrLogoutTokenUnverified, err)
+	}
+	now := time.Now()
+	switch {
+	case token.IssuedAt.IsZero():
+		return "", fmt.Errorf("logout token missing iat")
+	case token.IssuedAt.Before(now.Add(-maxLogoutTokenAge)):
+		return "", fmt.Errorf("logout token issued at %s is too old", token.IssuedAt.Format(time.RFC3339))
+	case token.IssuedAt.After(now.Add(logoutTokenSkew)):
+		return "", fmt.Errorf("logout token issued at %s is in the future", token.IssuedAt.Format(time.RFC3339))
+	case !token.Expiry.IsZero() && token.Expiry.Before(now.Add(-logoutTokenSkew)):
+		return "", fmt.Errorf("logout token expired at %s", token.Expiry.Format(time.RFC3339))
+	}
+	// The spec only recommends typing logout tokens, and many IdPs type them
+	// "JWT" like all their tokens (Keycloak before 25, Auth0, Zitadel, Hydra),
+	// so only another explicit type is refused.
+	switch typ, err := tokenType(rawToken); {
+	case err != nil:
+		return "", fmt.Errorf("logout token header: %w", err)
+	case typ != "" && typ != "jwt" && typ != "logout+jwt":
+		return "", fmt.Errorf("logout token has typ %q, want logout+jwt", typ)
 	}
 
 	var claims struct {
@@ -322,6 +363,27 @@ func (p *Provider) ValidateLogoutToken(ctx context.Context, rawToken string) (st
 		return "", fmt.Errorf("logout token missing sub")
 	}
 	return claims.Sub, nil
+}
+
+// tokenType returns the typ header of a JWT in lower case and without an
+// "application/" prefix, as RFC 7515 says to compare it, or "" if it has none.
+// go-oidc does not expose the header, so it is read from the raw token, which
+// must already be verified. Only the compact serialization is read; a token
+// in another one go-jose accepts is refused here, never let through.
+func tokenType(rawToken string) (string, error) {
+	header, _, _ := strings.Cut(rawToken, ".")
+	b, err := base64.RawURLEncoding.DecodeString(header)
+	if err != nil {
+		return "", err
+	}
+	var h struct {
+		Typ string `json:"typ"`
+	}
+	if err := json.Unmarshal(b, &h); err != nil {
+		return "", err
+	}
+	typ := strings.ToLower(h.Typ)
+	return strings.TrimPrefix(typ, "application/"), nil
 }
 
 func (p *Provider) LogoutURL(idToken string) string {

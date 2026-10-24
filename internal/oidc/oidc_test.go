@@ -43,7 +43,7 @@ func TestDiscoveryFindsEndSessionEndpoint(t *testing.T) {
 func TestValidateLogoutTokenAcceptsValid(t *testing.T) {
 	m := oidctest.NewServer(t)
 	p := newTestProvider(t, m)
-	tok := m.SignLogoutToken(t, "user-sub-123", "keyosk", false)
+	tok := m.SignLogoutToken(t, oidctest.NewLogoutToken("user-sub-123", "keyosk"))
 
 	sub, err := p.ValidateLogoutToken(context.Background(), tok)
 	if err != nil {
@@ -59,9 +59,10 @@ func TestValidateLogoutTokenAcceptsValid(t *testing.T) {
 func TestValidateLogoutTokenRejectsNonce(t *testing.T) {
 	m := oidctest.NewServer(t)
 	p := newTestProvider(t, m)
-	tok := m.SignLogoutToken(t, "user-sub-123", "keyosk", true)
+	tok := oidctest.NewLogoutToken("user-sub-123", "keyosk")
+	tok.Claims = map[string]any{"nonce": "must-not-be-here"}
 
-	if _, err := p.ValidateLogoutToken(context.Background(), tok); err == nil {
+	if _, err := p.ValidateLogoutToken(context.Background(), m.SignLogoutToken(t, tok)); err == nil {
 		t.Fatal("logout token with nonce was accepted")
 	}
 }
@@ -85,10 +86,76 @@ func TestValidateLogoutTokenRejectsPlainIDToken(t *testing.T) {
 func TestValidateLogoutTokenRejectsWrongAudience(t *testing.T) {
 	m := oidctest.NewServer(t)
 	p := newTestProvider(t, m)
-	tok := m.SignLogoutToken(t, "user-sub-123", "some-other-client", false)
+	tok := m.SignLogoutToken(t, oidctest.NewLogoutToken("user-sub-123", "some-other-client"))
 
 	if _, err := p.ValidateLogoutToken(context.Background(), tok); err == nil {
 		t.Fatal("logout token for another audience was accepted")
+	}
+}
+
+// A logout token is good only for a few minutes, so one captured on the way,
+// from a proxy log say, cannot log its user out again later. Tokens without
+// exp are accepted, since older versions of the spec did not require it, and
+// so is a little skew between the clocks. Without the logout event a token is
+// no logout token, and one with only sid names no user to log out.
+func TestValidateLogoutTokenChecksItsClaims(t *testing.T) {
+	m := oidctest.NewServer(t)
+	p := newTestProvider(t, m)
+	now := time.Now()
+
+	for _, tc := range []struct {
+		name   string
+		claims map[string]any
+		ok     bool
+	}{
+		{"fresh", nil, true},
+		{"without exp", map[string]any{"exp": nil}, true},
+		{"from a clock slightly ahead", map[string]any{"iat": now.Add(30 * time.Second).Unix()}, true},
+		{"without iat", map[string]any{"iat": nil}, false},
+		{"issued long ago", map[string]any{"iat": now.Add(-time.Hour).Unix(), "exp": nil}, false},
+		{"issued in the future", map[string]any{"iat": now.Add(time.Hour).Unix()}, false},
+		{"expired", map[string]any{"iat": now.Add(-4 * time.Minute).Unix(), "exp": now.Add(-2 * time.Minute).Unix()}, false},
+		{"without the logout event", map[string]any{"events": nil}, false},
+		{"with only sid", map[string]any{"sub": nil}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tok := oidctest.NewLogoutToken("user-sub-123", "keyosk")
+			tok.Claims = tc.claims
+			_, err := p.ValidateLogoutToken(context.Background(), m.SignLogoutToken(t, tok))
+			if tc.ok && err != nil {
+				t.Errorf("refused: %v", err)
+			}
+			if !tc.ok && err == nil {
+				t.Error("accepted")
+			}
+		})
+	}
+}
+
+// When the header names a type, it must be a logout token's or the generic
+// JWT, which many IdPs put on all their tokens; any other type the IdP signs
+// for this client is not a logout token.
+func TestValidateLogoutTokenChecksTheType(t *testing.T) {
+	m := oidctest.NewServer(t)
+	p := newTestProvider(t, m)
+
+	for typ, ok := range map[string]bool{
+		"logout+jwt":             true,
+		"application/logout+jwt": true,
+		"Logout+JWT":             true,
+		"":                       true,
+		"JWT":                    true,
+		"at+jwt":                 false,
+	} {
+		tok := oidctest.NewLogoutToken("user-sub-123", "keyosk")
+		tok.Typ = typ
+		_, err := p.ValidateLogoutToken(context.Background(), m.SignLogoutToken(t, tok))
+		if ok && err != nil {
+			t.Errorf("typ %q refused: %v", typ, err)
+		}
+		if !ok && err == nil {
+			t.Errorf("typ %q accepted", typ)
+		}
 	}
 }
 
