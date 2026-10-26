@@ -13,6 +13,7 @@ require (
 	github.com/uptrace/bun/dialect/sqlitedialect v1.3.0
 	github.com/uptrace/bun/driver/sqliteshim v1.3.0
 	golang.org/x/oauth2 v0.37.0
+	golang.org/x/sync v0.24.0
 )
 
 require (
