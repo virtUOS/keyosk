@@ -10,12 +10,15 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
+	"golang.org/x/oauth2"
 )
 
 // Server is an in-process OIDC issuer shaped like the university's Keycloak
@@ -31,8 +34,15 @@ type Server struct {
 	keyID  string
 
 	mu sync.Mutex
-	// codes maps an issued authorization code to the claims it represents.
-	codes map[string]Claims
+	// codes maps an issued authorization code to the claims it represents
+	// and, when the authorization request carried one, the PKCE challenge
+	// the exchange must answer.
+	codes map[string]issuedCode
+}
+
+type issuedCode struct {
+	claims    Claims
+	challenge string
 }
 
 // Claims are the identity fields Keycloak issues that this app consumes.
@@ -53,7 +63,7 @@ func NewServer(t *testing.T) *Server {
 	if err != nil {
 		t.Fatalf("generate key: %v", err)
 	}
-	m := &Server{key: key, keyID: "mock-key-1", codes: map[string]Claims{}}
+	m := &Server{key: key, keyID: "mock-key-1", codes: map[string]issuedCode{}}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
@@ -84,7 +94,8 @@ func NewServer(t *testing.T) *Server {
 	})
 
 	// Exchanges an authorization code for an id_token, as Keycloak would. A
-	// code is good for one exchange.
+	// code is good for one exchange, and a code issued for a PKCE challenge
+	// only to the verifier behind it.
 	mux.HandleFunc("/protocol/openid-connect/token", func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, "bad form", http.StatusBadRequest)
@@ -92,13 +103,15 @@ func NewServer(t *testing.T) *Server {
 		}
 		code := r.FormValue("code")
 		m.mu.Lock()
-		claims, ok := m.codes[code]
+		issued, ok := m.codes[code]
 		delete(m.codes, code)
 		m.mu.Unlock()
-		if !ok {
+		if !ok || (issued.challenge != "" &&
+			oauth2.S256ChallengeFromVerifier(r.FormValue("code_verifier")) != issued.challenge) {
 			http.Error(w, `{"error":"invalid_grant"}`, http.StatusBadRequest)
 			return
 		}
+		claims := issued.claims
 		// The oauth2 package sends the client credentials as HTTP Basic auth
 		// unless told otherwise, and in the form only as a fallback.
 		clientID := r.FormValue("client_id")
@@ -126,11 +139,40 @@ func NewServer(t *testing.T) *Server {
 // Issuer is the issuer URL, which is also where discovery is served.
 func (m *Server) Issuer() string { return m.server.URL }
 
-// IssueCode registers an authorization code redeemable once for these claims.
+// IssueCode registers an authorization code redeemable once for these claims,
+// with no PKCE challenge to answer.
 func (m *Server) IssueCode(code string, c Claims) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.codes[code] = c
+	m.codes[code] = issuedCode{claims: c}
+}
+
+// Authorize plays the browser's visit to the authorization endpoint: it
+// reads the request the app redirected to, insists on PKCE as a hardened IdP
+// does, and hands out a code for c that the token endpoint redeems only with
+// the verifier behind the request's challenge. It returns the code and the
+// state to carry back to the app's callback.
+func (m *Server) Authorize(t *testing.T, authURL string, c Claims) (code, state string) {
+	t.Helper()
+	u, err := url.Parse(authURL)
+	if err != nil {
+		t.Fatalf("authorization URL: %v", err)
+	}
+	if !strings.HasPrefix(authURL, m.server.URL+"/protocol/openid-connect/auth?") {
+		t.Fatalf("authorization URL %q is not this issuer's", authURL)
+	}
+	q := u.Query()
+	if q.Get("response_type") != "code" || q.Get("client_id") == "" || q.Get("redirect_uri") == "" || q.Get("state") == "" {
+		t.Fatalf("authorization request lacks a field: %s", u.RawQuery)
+	}
+	if q.Get("code_challenge_method") != "S256" || len(q.Get("code_challenge")) != 43 {
+		t.Fatalf("authorization request carries no S256 PKCE challenge: %s", u.RawQuery)
+	}
+	code = fmt.Sprintf("code-%d", time.Now().UnixNano())
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.codes[code] = issuedCode{claims: c, challenge: q.Get("code_challenge")}
+	return code, q.Get("state")
 }
 
 func (m *Server) signer(t *testing.T) jose.Signer {

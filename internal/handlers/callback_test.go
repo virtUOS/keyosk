@@ -53,14 +53,9 @@ func (lt *loginTest) login(t *testing.T, claims oidctest.Claims) *httptest.Respo
 	t.Helper()
 	rec := httptest.NewRecorder()
 	lt.ui.Login(rec, httptest.NewRequest(http.MethodGet, "http://localhost:8080/login", nil))
-	loc, err := url.Parse(rec.Header().Get("Location"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	code := "code-" + claims.Sub + "-" + claims.Email
-	lt.idp.IssueCode(code, claims)
+	code, state := lt.idp.Authorize(t, rec.Header().Get("Location"), claims)
 
-	q := url.Values{"state": {loc.Query().Get("state")}, "code": {code}}
+	q := url.Values{"state": {state}, "code": {code}}
 	req := httptest.NewRequest(http.MethodGet, "http://localhost:8080/callback?"+q.Encode(), nil)
 	for _, c := range rec.Result().Cookies() {
 		req.AddCookie(c)

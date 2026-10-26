@@ -112,20 +112,26 @@ func (p *Provider) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	state := generateState()
+	// PKCE binds the code the provider issues to this login: it is redeemed
+	// only with the verifier, which lives in the state cookie and nowhere
+	// else. A code that leaks through a log or a Referer header, or that an
+	// attacker injects into someone else's callback, cannot be exchanged.
+	verifier := oauth2.GenerateVerifier()
 	http.SetCookie(w, &http.Cookie{
 		Name:     p.stateCookie(state),
-		Value:    state,
+		Value:    verifier,
 		Path:     "/",
 		MaxAge:   300,
 		HttpOnly: true,
 		Secure:   p.cfg.CookieSecure,
 		SameSite: http.SameSiteLaxMode,
 	})
-	http.Redirect(w, r, p.oauthConfig.AuthCodeURL(state), http.StatusFound)
+	http.Redirect(w, r, p.oauthConfig.AuthCodeURL(state, oauth2.S256ChallengeOption(verifier)), http.StatusFound)
 }
 
-// stateCookie names the cookie that carries a login's state. It is a __Host-
-// cookie when cookies are Secure, so a sibling host cannot plant one.
+// stateCookie names the cookie of a login: the name carries its state, the
+// value its PKCE verifier. It is a __Host- cookie when cookies are Secure, so
+// a sibling host cannot plant one.
 func (p *Provider) stateCookie(state string) string {
 	return session.CookieName("oidc_state_"+state, p.cfg.CookieSecure)
 }
@@ -137,13 +143,21 @@ type CallbackResult struct {
 
 func (p *Provider) HandleCallback(w http.ResponseWriter, r *http.Request) (*CallbackResult, error) {
 	state := r.URL.Query().Get("state")
+	if state == "" {
+		// Nothing legitimate sends one, and the cookie it would name,
+		// oidc_state_, has an empty value that would match it.
+		return nil, fmt.Errorf("missing state")
+	}
+	// The cookie's name carries the state, its value the verifier of the
+	// login that set it.
 	cookie, err := r.Cookie(p.stateCookie(state))
-	if err != nil || cookie.Value != state {
+	if err != nil || cookie.Value == "" {
 		return nil, fmt.Errorf("invalid state")
 	}
+	verifier := cookie.Value
 	http.SetCookie(w, &http.Cookie{Name: p.stateCookie(state), Value: "", Path: "/", MaxAge: -1, Secure: p.cfg.CookieSecure})
 
-	tokens, err := p.oauthConfig.Exchange(r.Context(), r.URL.Query().Get("code"))
+	tokens, err := p.oauthConfig.Exchange(r.Context(), r.URL.Query().Get("code"), oauth2.VerifierOption(verifier))
 	if err != nil {
 		return nil, fmt.Errorf("exchange code: %w", err)
 	}

@@ -49,6 +49,15 @@ Register the application with your OIDC provider:
 - Required scopes: `openid`, `email`, `profile`, plus whatever your IdP needs
   to send groups when `ADMIN_GROUP` is set (see `OIDC_EXTRA_SCOPES`)
 
+Keyosk uses the authorization code flow with PKCE (S256), so the registration
+needs no setting for it, and a provider that requires PKCE works. PKCE binds
+each authorization code to the login that requested it, so a code that leaks
+or is injected into someone else's callback cannot be redeemed. It does not
+protect a deployment on plain http: there the login's state cookie has no
+`__Host-` prefix and can be planted by another host under the same domain or
+by someone on the network, who can then complete a login they started in
+another person's browser. Use https anywhere but on a developer's machine.
+
 Only the identity provider calls `/backchannel-logout`, and it needs no login.
 Keyosk acts only on a logout token signed by the provider, but each request
 with a token it cannot verify makes it fetch the provider's signing keys

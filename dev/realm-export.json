@@ -20,7 +20,8 @@
       "attributes": {
         "post.logout.redirect.uris": "http://localhost:8080/*",
         "backchannel.logout.url": "http://host.docker.internal:8080/backchannel-logout",
-        "backchannel.logout.session.required": "true"
+        "backchannel.logout.session.required": "true",
+        "pkce.code.challenge.method": "S256"
       },
       "protocolMappers": [
         {
