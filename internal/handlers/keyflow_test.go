@@ -16,7 +16,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/sqlitedialect"
-	"github.com/uptrace/bun/driver/sqliteshim"
+	_ "modernc.org/sqlite"
 
 	"github.com/virtuos/keyosk/internal/config"
 	"github.com/virtuos/keyosk/internal/database"
@@ -28,7 +28,7 @@ import (
 // plus a logged-in user and the cookies needed to satisfy CSRF.
 func newTestUI(t *testing.T, name string) (*UI, *keyprovider.Fake, *database.Store, *database.User) {
 	t.Helper()
-	sqldb, err := sql.Open(sqliteshim.ShimName, memoryDSN(name))
+	sqldb, err := sql.Open("sqlite", memoryDSN(name))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func memoryDSN(name string) string {
 // database while newTestUI's stays open.
 func rawDB(t *testing.T, name string) *sql.DB {
 	t.Helper()
-	db, err := sql.Open(sqliteshim.ShimName, memoryDSN(name))
+	db, err := sql.Open("sqlite", memoryDSN(name))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -575,7 +575,7 @@ func TestGenerateKeyRollsBackAfterDisconnect(t *testing.T) {
 
 	// A second connection to the shared in-memory database, to break the
 	// row insert from outside the store once the gateway has acted.
-	raw, err := sql.Open(sqliteshim.ShimName, "file:"+name+"?mode=memory&cache=shared")
+	raw, err := sql.Open("sqlite", "file:"+name+"?mode=memory&cache=shared")
 	if err != nil {
 		t.Fatal(err)
 	}

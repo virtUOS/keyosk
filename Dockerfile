@@ -1,9 +1,9 @@
 # Build
 FROM golang:1.27-alpine AS build
 
-# CGO stays off: the sqlite driver in use is uptrace/bun's sqliteshim, which
-# selects the pure-Go modernc.org/sqlite backend when cgo is unavailable. That
-# keeps the binary static and the runtime image free of libc concerns.
+# CGO stays off, which keeps the binary static and the runtime image free of
+# libc concerns. The SQLite driver, modernc.org/sqlite, is pure Go and needs no
+# cgo.
 ENV CGO_ENABLED=0 GOOS=linux
 
 WORKDIR /src

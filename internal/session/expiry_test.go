@@ -8,7 +8,7 @@ import (
 
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/sqlitedialect"
-	"github.com/uptrace/bun/driver/sqliteshim"
+	_ "modernc.org/sqlite"
 
 	"github.com/virtuos/keyosk/internal/database"
 )
@@ -16,7 +16,7 @@ import (
 // newSessionStore opens a migrated in-memory store with one user in it.
 func newSessionStore(t *testing.T, name string) (*database.Store, *database.User) {
 	t.Helper()
-	sqldb, err := sql.Open(sqliteshim.ShimName, "file:"+name+"?mode=memory&cache=shared")
+	sqldb, err := sql.Open("sqlite", "file:"+name+"?mode=memory&cache=shared")
 	if err != nil {
 		t.Fatal(err)
 	}

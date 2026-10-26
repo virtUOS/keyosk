@@ -10,7 +10,7 @@ import (
 
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/sqlitedialect"
-	"github.com/uptrace/bun/driver/sqliteshim"
+	_ "modernc.org/sqlite"
 
 	"github.com/virtuos/keyosk/internal/database"
 	"github.com/virtuos/keyosk/internal/keyprovider"
@@ -20,7 +20,7 @@ import (
 
 func testStore(t *testing.T, name string) *database.Store {
 	t.Helper()
-	sqldb, err := sql.Open(sqliteshim.ShimName, "file:"+name+"?mode=memory&cache=shared")
+	sqldb, err := sql.Open("sqlite", "file:"+name+"?mode=memory&cache=shared")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -397,7 +397,7 @@ func TestStartRecordsSuccess(t *testing.T) {
 // A run that fails leaves the last success where it was.
 func TestStartKeepsLastSuccessOnFailure(t *testing.T) {
 	// Never migrated, so every run fails on its first query.
-	sqldb, err := sql.Open(sqliteshim.ShimName, "file:job-failure?mode=memory&cache=shared")
+	sqldb, err := sql.Open("sqlite", "file:job-failure?mode=memory&cache=shared")
 	if err != nil {
 		t.Fatal(err)
 	}
