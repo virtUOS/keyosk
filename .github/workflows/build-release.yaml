@@ -27,8 +27,8 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # Same flags as the Dockerfile: CGO off so bun's sqliteshim selects the
-      # pure-Go sqlite backend, giving a static, self-contained binary.
+      # Same flags as the Dockerfile: CGO off, giving a static, self-contained
+      # binary.
       - name: Build (amd64)
         env:
           CGO_ENABLED: '0'

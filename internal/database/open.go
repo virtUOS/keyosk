@@ -6,7 +6,7 @@ import (
 
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/sqlitedialect"
-	"github.com/uptrace/bun/driver/sqliteshim"
+	_ "modernc.org/sqlite" // registers the pure-Go driver as "sqlite"
 )
 
 // Open opens the SQLite database at path, configured for a web server whose
@@ -31,7 +31,7 @@ import (
 func Open(path string) (*bun.DB, error) {
 	dsn := "file:" + path +
 		"?_journal_mode=WAL&_busy_timeout=5000&_txlock=immediate&_foreign_keys=on"
-	sqldb, err := sql.Open(sqliteshim.ShimName, dsn)
+	sqldb, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}

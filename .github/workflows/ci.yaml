@@ -34,8 +34,7 @@ jobs:
       - name: Test
         run: make test
 
-      # The deployment image builds with CGO disabled so bun's sqliteshim
-      # selects the pure-Go sqlite backend.
+      # The deployment image builds with CGO disabled, for a static binary.
       - name: Build (CGO disabled, as the image does)
         run: make build
 

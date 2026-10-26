@@ -13,7 +13,7 @@ import (
 
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/sqlitedialect"
-	"github.com/uptrace/bun/driver/sqliteshim"
+	_ "modernc.org/sqlite"
 
 	"github.com/virtuos/keyosk/internal/config"
 	"github.com/virtuos/keyosk/internal/database"
@@ -27,7 +27,7 @@ const actingAdminEmail = "acting@uni-osnabrueck.de"
 // newAuthTestStore opens a migrated in-memory store.
 func newAuthTestStore(t *testing.T, name string) *database.Store {
 	t.Helper()
-	sqldb, err := sql.Open(sqliteshim.ShimName, "file:"+name+"?mode=memory&cache=shared")
+	sqldb, err := sql.Open("sqlite", "file:"+name+"?mode=memory&cache=shared")
 	if err != nil {
 		t.Fatal(err)
 	}

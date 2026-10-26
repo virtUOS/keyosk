@@ -9,15 +9,15 @@ import (
 
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/sqlitedialect"
-	"github.com/uptrace/bun/driver/sqliteshim"
 	"github.com/uptrace/bun/migrate"
+	_ "modernc.org/sqlite"
 
 	"github.com/virtuos/keyosk/internal/database/migrations"
 )
 
 func testStore(t *testing.T, name string) *Store {
 	t.Helper()
-	sqldb, err := sql.Open(sqliteshim.ShimName, "file:"+name+"?mode=memory&cache=shared")
+	sqldb, err := sql.Open("sqlite", "file:"+name+"?mode=memory&cache=shared")
 	if err != nil {
 		t.Fatal(err)
 	}

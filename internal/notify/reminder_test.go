@@ -13,7 +13,7 @@ import (
 
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/sqlitedialect"
-	"github.com/uptrace/bun/driver/sqliteshim"
+	_ "modernc.org/sqlite"
 
 	"github.com/virtuos/keyosk/internal/database"
 	"github.com/virtuos/keyosk/internal/metrics/metricstest"
@@ -59,7 +59,7 @@ func (r *recorder) count() int {
 // wraps, for the raw updates the store's API does not offer.
 func setup(t *testing.T, name string) (*database.Store, *bun.DB) {
 	t.Helper()
-	sqldb, err := sql.Open(sqliteshim.ShimName, "file:"+name+"?mode=memory&cache=shared")
+	sqldb, err := sql.Open("sqlite", "file:"+name+"?mode=memory&cache=shared")
 	if err != nil {
 		t.Fatal(err)
 	}
