@@ -33,6 +33,8 @@ type UI struct {
 	csrf     *session.CSRF
 	models   *modelCache
 	usage    *usageCache
+	// upstreamTimeout is how long a page waits for the gateway's reads.
+	upstreamTimeout time.Duration
 
 	// keyLocks serializes the handlers that read and replace a user's key.
 	keyLocks keyedLock
@@ -62,7 +64,7 @@ func NewUI(cfg *config.Config, store *database.Store, sessions *session.Manager,
 	}
 	return &UI{cfg: cfg, store: store, sessions: sessions, oidc: oidc, keys: keys,
 		tmpl: tmpl, privacyTmpl: parsePrivacyTemplate(), accountTmpl: parseAccountTemplate(), aboutTmpl: parseAboutTemplate(), flash: newKeyFlash(), csrf: csrf,
-		models: newModelCache(lister), usage: usage, kickSync: kickSync}
+		models: newModelCache(lister), usage: usage, upstreamTimeout: dashboardUpstreamTimeout, kickSync: kickSync}
 }
 
 func (u *UI) requireSession(r *http.Request) (*session.SessionUser, error) {
@@ -166,6 +168,12 @@ func (u *UI) markMissingKey(ctx context.Context, user *database.User, k *databas
 	}
 }
 
+// dashboardUpstreamTimeout is how long the dashboard waits for the gateway.
+// Its reads share this one deadline, so a slow gateway costs the page a few
+// seconds rather than the server's WriteTimeout, and what has not arrived by
+// then is left out, with the usage marked incomplete.
+const dashboardUpstreamTimeout = 5 * time.Second
+
 // Dashboard renders the user dashboard.
 func (u *UI) Dashboard(w http.ResponseWriter, r *http.Request) {
 	su, err := u.requireSession(r)
@@ -196,13 +204,17 @@ func (u *UI) Dashboard(w http.ResponseWriter, r *http.Request) {
 	// the page says the change is coming rather than showing a past date.
 	expiryPending := su.User.ProfileExpiresAt != nil && !su.User.ProfileExpiresAt.After(time.Now())
 
+	// Every read from the gateway on this page shares one deadline.
+	gctx, cancel := context.WithTimeout(r.Context(), u.upstreamTimeout)
+	defer cancel()
+
 	// Without the profile, the extend date and the model list would fall back
 	// to server-wide defaults that may not be this user's, so leave them out.
 	extendUntil := ""
 	var models []string
 	if !profileErr {
 		extendUntil = u.extendUntil(profile)
-		models = u.userModels(r.Context(), profile)
+		models = u.userModels(gctx, profile)
 	}
 
 	// The Admin link must agree with what the /admin gate allows, and both
@@ -222,7 +234,7 @@ func (u *UI) Dashboard(w http.ResponseWriter, r *http.Request) {
 	var usage usageReport
 	keyMissing := apiKey != nil && apiKey.MissingSince != nil
 	if !keyMissing {
-		usage = u.userUsage(r.Context(), apiKey, u.cfg.LiteLLMUserID(su.User.OIDCSub), lang)
+		usage = u.userUsage(gctx, apiKey, u.cfg.LiteLLMUserID(su.User.OIDCSub), lang)
 		if usage.KeyMissing {
 			u.markMissingKey(r.Context(), su.User, apiKey, metrics.SourceDashboard)
 			usage, keyMissing = usageReport{}, true
@@ -245,7 +257,7 @@ func (u *UI) Dashboard(w http.ResponseWriter, r *http.Request) {
 		SuccessorURL:    u.cfg.SuccessorURL,
 		PrivacyNotice:   hasPrivacyNotice(u.cfg),
 		Models:          models,
-		EmbeddingModels: u.models.Embeddings(r.Context()),
+		EmbeddingModels: u.models.Embeddings(gctx),
 		Usage:           usage,
 		CSRFToken:       u.csrf.Token(w, r),
 		Lang:            lang,
@@ -821,9 +833,22 @@ func (u *UI) userUsage(ctx context.Context, k *database.APIKey, ownerID string, 
 	if k == nil {
 		return usageReport{}
 	}
+	// The history and the windows are independent reads. Side by side, the
+	// slower of them sets the page's wait rather than their sum.
+	var (
+		h    keyprovider.History
+		herr error
+		done = make(chan struct{})
+	)
+	go func() {
+		defer close(done)
+		h, herr = u.usage.History(ctx, ownerID)
+	}()
+	windows, werr := u.quotaWindows(ctx, k.KeyRef, ownerID, lang)
+	<-done
+
 	var rep usageReport
-	h, err := u.usage.History(ctx, ownerID)
-	if err != nil {
+	if herr != nil {
 		rep.Incomplete = true
 	}
 	days := h.Days
@@ -841,10 +866,10 @@ func (u *UI) userUsage(ctx context.Context, k *database.APIKey, ownerID string, 
 		}
 	}
 
-	rep.Windows, err = u.quotaWindows(ctx, k.KeyRef, ownerID, lang)
-	if err != nil {
+	rep.Windows = windows
+	if werr != nil {
 		rep.Incomplete = true
-		rep.KeyMissing = errors.Is(err, keyprovider.ErrKeyNotFound)
+		rep.KeyMissing = errors.Is(werr, keyprovider.ErrKeyNotFound)
 	}
 	return rep
 }
