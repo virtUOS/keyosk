@@ -91,8 +91,11 @@ func TestDashboardRendersModels(t *testing.T) {
 			t.Errorf("model %q is not click-to-copy", m)
 		}
 	}
-	if n := strings.Count(out, "copyModel(this)"); n != len(withModels.Models) {
-		t.Errorf("%d copy handlers for %d models", n, len(withModels.Models))
+	if n := strings.Count(out, `class="model-copy"`); n != len(withModels.Models) {
+		t.Errorf("%d copy buttons for %d models", n, len(withModels.Models))
+	}
+	if !strings.Contains(staticJS(t, "dashboard.js"), "querySelectorAll('.model-copy')") {
+		t.Error("the script does not wire up the model buttons")
 	}
 
 	buf.Reset()
@@ -118,14 +121,13 @@ func TestModelCopyConfirmsInWords(t *testing.T) {
 		}); err != nil {
 			t.Fatal(err)
 		}
-		out := buf.String()
 		want := i18n.T(lang, "dash.copied")
-		if !strings.Contains(out, want) {
-			t.Errorf("%s: copy confirmation %q not available to the script", lang, want)
+		if got := pageData(t, buf.String())["copied"]; got != want {
+			t.Errorf("%s: copy confirmation is %q, want %q", lang, got, want)
 		}
-		if !strings.Contains(out, "code.textContent = COPIED") {
-			t.Errorf("%s: chip does not swap its label on copy", lang)
-		}
+	}
+	if !strings.Contains(staticJS(t, "dashboard.js"), "code.textContent = COPIED") {
+		t.Error("chip does not swap its label on copy")
 	}
 }
 
@@ -145,22 +147,23 @@ func TestModelChipCopiesTheNameAndShowsCurl(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := buf.String()
+	js := staticJS(t, "dashboard.js")
 
 	// The example is built in the page, so the base URL has to reach the script.
-	if !strings.Contains(out, "https://gateway.example/v1") {
+	if pageData(t, out)["baseURL"] != "https://gateway.example/v1" {
 		t.Error("base URL not available to the curl example")
 	}
 	for _, want := range []string{"chat/completions", "Authorization: Bearer", "curlExample("} {
-		if !strings.Contains(out, want) {
+		if !strings.Contains(js, want) {
 			t.Errorf("curl example is missing %q", want)
 		}
 	}
 
 	// The clipboard gets the name; the example is revealed, not copied.
-	if !strings.Contains(out, "writeText(btn.dataset.model)") {
+	if !strings.Contains(js, "writeText(btn.dataset.model)") {
 		t.Error("the chip does not copy the bare model name")
 	}
-	if !strings.Contains(out, "showExample(btn.dataset.model)") {
+	if !strings.Contains(js, "showExample(btn.dataset.model)") {
 		t.Error("the chip does not switch the example request")
 	}
 
@@ -169,13 +172,16 @@ func TestModelChipCopiesTheNameAndShowsCurl(t *testing.T) {
 		t.Error("the example panel is hidden until a model is picked")
 	}
 	// Python alongside curl, since that is how most people script against it.
-	for _, want := range []string{"pythonExample(", "setExampleLang('python')", "from openai import OpenAI"} {
-		if !strings.Contains(out, want) {
+	if !strings.Contains(out, `data-lang="python"`) {
+		t.Error("there is no tab for the Python example")
+	}
+	for _, want := range []string{"pythonExample(", "setExampleLang(b.dataset.lang)", "from openai import OpenAI"} {
+		if !strings.Contains(js, want) {
 			t.Errorf("Python example is missing %q", want)
 		}
 	}
 	// It carries its own copy button, separate from the chips.
-	if !strings.Contains(out, "copyCurl(this)") {
+	if !strings.Contains(out, `id="curl-copy"`) || !strings.Contains(js, "copyCurl(btn)") {
 		t.Error("the example cannot be copied on its own")
 	}
 }
@@ -197,11 +203,12 @@ func TestCurlExampleDoesNotEmbedTheKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := buf.String()
+	js := staticJS(t, "dashboard.js")
 
-	if !strings.Contains(out, "$LLM_API_KEY") {
+	if !strings.Contains(js, "$LLM_API_KEY") {
 		t.Error("curl example does not read the key from the environment")
 	}
-	if !strings.Contains(out, `os.environ[\"LLM_API_KEY\"]`) {
+	if !strings.Contains(js, `os.environ[\"LLM_API_KEY\"]`) {
 		t.Error("Python example does not read the key from the environment")
 	}
 	// The freshly issued key is shown once in its own box; it must not also be
@@ -228,16 +235,16 @@ func TestDashboardMarksEmbeddingModels(t *testing.T) {
 	if err := parseDashboardTemplate().Execute(&buf, d); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
-	out := buf.String()
-	if !strings.Contains(out, `"bge-m3":true`) {
+	marked, _ := pageData(t, buf.String())["embeddingModels"].(map[string]any)
+	if marked["bge-m3"] != true {
 		t.Error("embedding model not marked; its curl example would use /chat/completions")
 	}
-	if strings.Contains(out, `"gpt-4o":true`) {
+	if marked["gpt-4o"] == true {
 		t.Error("chat model marked as an embedding model")
 	}
 	// The script must offer both endpoints, or the distinction cannot be drawn.
 	for _, want := range []string{"/embeddings", "/chat/completions"} {
-		if !strings.Contains(out, want) {
+		if !strings.Contains(staticJS(t, "dashboard.js"), want) {
 			t.Errorf("script does not mention %q", want)
 		}
 	}
@@ -258,8 +265,8 @@ func TestDashboardRendersWithoutEmbeddingInfo(t *testing.T) {
 	if err := parseDashboardTemplate().Execute(&buf, d); err != nil {
 		t.Fatalf("nil embedding map broke rendering: %v", err)
 	}
-	if !strings.Contains(buf.String(), "EMBEDDING_MODELS") {
-		t.Error("EMBEDDING_MODELS missing; the script would throw on a click")
+	if _, ok := pageData(t, buf.String())["embeddingModels"]; !ok {
+		t.Error("embeddingModels missing; the script would throw on a click")
 	}
 }
 
