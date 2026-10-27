@@ -151,7 +151,10 @@ func newPage(t *testing.T, o pageOptions) playwright.Page {
 		problems = append(problems, "script error: "+err.Error())
 	})
 	page.OnConsole(func(m playwright.ConsoleMessage) {
-		if m.Type() != "error" || o.consoleErrors {
+		// A script or handler the CSP blocks only shows here, so these count
+		// even for a test that expects other console errors.
+		csp := strings.Contains(m.Text(), "Content Security Policy")
+		if m.Type() != "error" || (o.consoleErrors && !csp) {
 			return
 		}
 		mu.Lock()
