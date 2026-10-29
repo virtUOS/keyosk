@@ -46,8 +46,8 @@ func TestExtendUntilIsTheDateExtendApplies(t *testing.T) {
 	// What ExtendKey applies, from the same source.
 	applied := time.Now().AddDate(0, 0, u.keyDuration(profile))
 
-	if label != applied.Format("2006-01-02") {
-		t.Errorf("label says %q but Extend sets %q", label, applied.Format("2006-01-02"))
+	if d := applied.Sub(label); d < 0 || d > time.Second {
+		t.Errorf("label says %s but Extend sets %s", label, applied)
 	}
 }
 
@@ -56,9 +56,9 @@ func TestExtendUntilIsTheDateExtendApplies(t *testing.T) {
 func TestExtendUntilIgnoresRemainingTime(t *testing.T) {
 	u := &UI{cfg: &config.Config{KeyDurationDays: 90}}
 
-	want := time.Now().AddDate(0, 0, 90).Format("2006-01-02")
-	if got := u.extendUntil(nil); got != want {
-		t.Errorf("extendUntil = %q, want %q", got, want)
+	got := u.extendUntil(nil)
+	if d := time.Now().AddDate(0, 0, 90).Sub(got); d < 0 || d > time.Second {
+		t.Errorf("extendUntil = %s, want 90 days from now", got)
 	}
 }
 
@@ -71,7 +71,7 @@ func TestExtendButtonRendersDateNotDelta(t *testing.T) {
 			Lang:        lang,
 			User:        &database.User{Name: "T", Email: "t@example.com"},
 			APIKey:      &database.APIKey{KeyPrefix: "sk-abc", ExpiresAt: time.Now().Add(24 * time.Hour)},
-			ExtendUntil: "2026-11-23",
+			ExtendUntil: time.Date(2026, 11, 23, 10, 0, 0, 0, time.UTC),
 			CSRFToken:   "TOK",
 		}); err != nil {
 			t.Fatalf("%s: execute: %v", lang, err)

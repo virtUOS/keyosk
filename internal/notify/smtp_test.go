@@ -23,7 +23,7 @@ import (
 // expiryNotice is the mail the reminder sends, with the umlauts and the
 // ellipsis that made the headers break.
 func expiryNotice() Message {
-	r := &Reminder{frontend: "https://ai.uni-osnabrueck.de"}
+	r := NewReminder(nil, nil, "https://ai.uni-osnabrueck.de", nil)
 	return r.message(database.ExpiringKey{
 		APIKey: database.APIKey{KeyPrefix: "sk-abcdef", ExpiresAt: time.Date(2026, 10, 19, 0, 0, 0, 0, time.UTC)},
 		Email:  "juergen@uni-osnabrueck.de",

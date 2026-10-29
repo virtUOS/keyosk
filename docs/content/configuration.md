@@ -32,6 +32,7 @@ in:
 | `SMTP_FROM`          | no       | `noreply@example.com` | Sender address for expiry emails                   |
 | `SMTP_USERNAME`      | no       | —           | Only if the relay requires authentication                          |
 | `SMTP_PASSWORD`      | no       | —           | Only if the relay requires authentication                          |
+| `TZ`                 | no       | UTC in the container | Time zone the expiry emails give a key's expiry in, such as `Europe/Berlin`; they name it. The dashboard shows each reader's own time zone |
 | `METRICS_TOKEN`      | no       | —           | Bearer token `/metrics` requires. Without it the endpoint is open. See [Metrics](monitoring.md#metrics) |
 | `LOG_LEVEL`          | no       | `info`      | `debug`, `info`, `warn` or `error`                                 |
 | `LIMIT_SYNC_WORKERS` | no       | `1`         | How many limit updates Keyosk sends to the gateway at once. One is gentle on the gateway but slow for large changes: about 25 minutes for 5,000 keys |

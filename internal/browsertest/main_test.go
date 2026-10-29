@@ -90,6 +90,9 @@ type pageOptions struct {
 	viewport    *playwright.Size
 	clipboard   bool
 	colorScheme *playwright.ColorScheme
+	// timezone is the browser's time zone, such as "Asia/Tokyo"; empty
+	// keeps the machine's.
+	timezone string
 	// consoleErrors lets a page log errors without failing the test, for
 	// tests that make requests fail on purpose.
 	consoleErrors bool
@@ -110,6 +113,9 @@ func newContext(t *testing.T, o pageOptions) playwright.BrowserContext {
 	}
 	if o.clipboard {
 		opts.Permissions = []string{"clipboard-read", "clipboard-write"}
+	}
+	if o.timezone != "" {
+		opts.TimezoneId = playwright.String(o.timezone)
 	}
 	bc, err := browser.NewContext(opts)
 	if err != nil {

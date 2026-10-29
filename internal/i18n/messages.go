@@ -82,7 +82,7 @@ var messages = map[string]map[Lang]string{
 	"dash.apikey":       {DE: "API-Schlüssel", EN: "API key"},
 	"dash.key":          {DE: "Schlüssel", EN: "Key"},
 	"dash.expires":      {DE: "Gültig bis", EN: "Expires"},
-	"dash.expires.help": {DE: "Wann dieser Schlüssel ungültig wird. Mit „Verlängern“ erhalten Sie jederzeit einen vollen neuen Zeitraum, beliebig oft.", EN: "When this key stops working. Click Extend for a full new period — you can do that at any time, as often as you like."},
+	"dash.expires.help": {DE: "Wann dieser Schlüssel ungültig wird, in der Zeitzone Ihres Geräts. Mit „Verlängern“ erhalten Sie jederzeit einen vollen neuen Zeitraum, beliebig oft.", EN: "When this key stops working, in your device's time zone. Click Extend for a full new period — you can do that at any time, as often as you like."},
 	"dash.privacy":      {DE: "Datenschutzhinweise zur API-Nutzung", EN: "Privacy notice for API use"},
 	"dash.nokey":        {DE: "Sie haben noch keinen API-Schlüssel.", EN: "You don't have an API key yet."},
 	"dash.generate":     {DE: "API-Schlüssel erzeugen", EN: "Generate API key"},
@@ -143,8 +143,8 @@ var messages = map[string]map[Lang]string{
 
 	"dash.expiry.expired":      {DE: "Ihr Schlüssel ist abgelaufen.", EN: "Your key has expired."},
 	"dash.expiry.expired.note": {DE: "Erzeugen Sie einen neuen, um den Zugriff wiederherzustellen.", EN: "Generate a new one to restore access."},
-	"dash.expiry.today":        {DE: "Ihr Schlüssel läuft heute ab.", EN: "Your key expires today."},
-	"dash.expiry.today.note":   {DE: "Verlängern Sie ihn, um den Zugriff zu behalten.", EN: "Extend it to keep your access."},
+	"dash.expiry.day":          {DE: "Ihr Schlüssel läuft in weniger als einem Tag ab.", EN: "Your key expires in less than a day."},
+	"dash.expiry.day.note":     {DE: "Verlängern Sie ihn, um den Zugriff zu behalten.", EN: "Extend it to keep your access."},
 	"dash.expiry.soon.note":    {DE: "Verlängern Sie ihn jetzt, um Unterbrechungen zu vermeiden.", EN: "Extend it now to avoid interruption."},
 
 	"dash.time.in":      {DE: "in", EN: "in"},
@@ -157,7 +157,6 @@ var messages = map[string]map[Lang]string{
 	"dash.time.days":    {DE: "Tagen", EN: "days"},
 	"badge.daysleft":    {DE: "T übrig", EN: "d left"},
 	"badge.expired":     {DE: "abgelaufen", EN: "expired"},
-	"badge.today":       {DE: "heute", EN: "Today"},
 	"badge.left":        {DE: "T übrig", EN: "d left"},
 
 	// ── Admin ───────────────────────────────────────────────────────────

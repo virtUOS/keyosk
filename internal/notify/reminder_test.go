@@ -233,8 +233,8 @@ func TestReminderSendsThresholdsTheValidityAllows(t *testing.T) {
 		valid int
 		want  []string
 	}{
-		{14, []string{"in 3 days", "tomorrow"}},
-		{30, []string{"in 14 days", "in 3 days", "tomorrow"}},
+		{14, []string{"in 3 days", "within a day"}},
+		{30, []string{"in 14 days", "in 3 days", "within a day"}},
 	} {
 		t.Run(fmt.Sprintf("%dd", tc.valid), func(t *testing.T) {
 			s, db := setup(t, fmt.Sprintf("rem9-%d", tc.valid))
@@ -255,7 +255,7 @@ func TestReminderSendsThresholdsTheValidityAllows(t *testing.T) {
 
 			var got []string
 			for _, m := range rec.sent {
-				for _, w := range []string{"in 14 days", "in 3 days", "tomorrow"} {
+				for _, w := range []string{"in 14 days", "in 3 days", "within a day"} {
 					if strings.Contains(m.Subject, w) {
 						got = append(got, w)
 					}
@@ -286,7 +286,7 @@ func TestReminderSendsOnlyTheNarrowestDueNotice(t *testing.T) {
 	if rec.count() != 1 {
 		t.Fatalf("sent %d messages, want 1", rec.count())
 	}
-	if !strings.Contains(rec.sent[0].Subject, "tomorrow") {
+	if !strings.Contains(rec.sent[0].Subject, "within a day") {
 		t.Errorf("subject = %q, want the 1-day notice", rec.sent[0].Subject)
 	}
 	if p := pending(t, s, k.ID); len(p) != 0 {
@@ -315,7 +315,7 @@ func TestReminderRetriesTheNarrowestNoticeAfterFailure(t *testing.T) {
 	if err := r.Run(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if rec.count() != 1 || !strings.Contains(rec.sent[0].Subject, "tomorrow") {
+	if rec.count() != 1 || !strings.Contains(rec.sent[0].Subject, "within a day") {
 		t.Fatalf("sent %+v after recovery, want the 1-day notice only", rec.sent)
 	}
 }
@@ -449,8 +449,8 @@ func TestReminderMessageWording(t *testing.T) {
 		t.Fatalf("sent %d, want 1", rec.count())
 	}
 	m := rec.sent[0]
-	if !strings.Contains(m.Subject, "tomorrow") {
-		t.Errorf("subject = %q, want it to say tomorrow", m.Subject)
+	if !strings.Contains(m.Subject, "within a day") {
+		t.Errorf("subject = %q, want it to say within a day", m.Subject)
 	}
 	if !strings.Contains(m.Body, "Test User") {
 		t.Error("body does not address the user by name")
@@ -520,7 +520,7 @@ func TestReminderSendsNoWiderNoticeInPlaceOfAFailedOne(t *testing.T) {
 	if err := r.Run(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if rec.count() != 1 || !strings.Contains(rec.sent[0].Subject, "tomorrow") {
+	if rec.count() != 1 || !strings.Contains(rec.sent[0].Subject, "within a day") {
 		t.Fatalf("sent %+v after recovery, want the 1-day notice only", rec.sent)
 	}
 	if p := pending(t, s, k.ID); len(p) != 0 {

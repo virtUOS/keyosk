@@ -29,7 +29,7 @@ func TestDashboardHasNoUntranslatedProse(t *testing.T) {
 		APIBaseURL:  "https://gw/v1",
 		Quotas:      []quotaLine{{Budget: "$0.15", Period: "per day"}},
 		ProfileName: "students",
-		ExtendUntil: "2026-11-23",
+		ExtendUntil: time.Date(2026, 11, 23, 10, 0, 0, 0, time.UTC),
 		Models:      []string{"gpt-4o"},
 		BudgetUnit:  "$",
 		Usage: usageReport{
@@ -81,7 +81,7 @@ func TestDashboardRendersNoRawCatalogueKeys(t *testing.T) {
 		APIKey: &database.APIKey{KeyPrefix: "sk-abc", ExpiresAt: time.Now().Add(24 * time.Hour)},
 		// Every conditional block on, so no branch escapes the check.
 		APIBaseURL: "https://gw/v1", Quotas: []quotaLine{{Budget: "$0.15", Period: "per day"}},
-		ProfileName: "students", ExtendUntil: "2026-11-23",
+		ProfileName: "students", ExtendUntil: time.Date(2026, 11, 23, 10, 0, 0, 0, time.UTC),
 		Models: []string{"gpt-4o"}, NewKey: "sk-new",
 		ExpiresInDays: 2, ExpiryUrgent: true, CSRFToken: "TOK",
 		BudgetUnit: "$", PrivacyNotice: true,

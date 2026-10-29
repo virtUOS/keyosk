@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/url"
 	"sort"
@@ -56,12 +57,19 @@ type createKeyResponse struct {
 	Token string `json:"token"`
 }
 
+// keyDuration is how LiteLLM is told when a key expires: the seconds until
+// then, so the gateway's expiry lands on the stored moment. In whole days
+// from now, it could drift from the stored moment by up to a day.
+func keyDuration(expiresAt time.Time) string {
+	return fmt.Sprintf("%ds", int(math.Ceil(time.Until(expiresAt).Seconds())))
+}
+
 // CreateKey issues a key and returns the secret, to hand to the user once, and
 // the hash LiteLLM identifies it by, to keep as the ref. Only the hash may be
 // stored: unlike the secret, it cannot be used to make requests.
 func (c *Client) CreateKey(ctx context.Context, alias string, params KeyParams, expiresAt time.Time) (secret, ref string, err error) {
 	params.KeyAlias = alias
-	params.Duration = fmt.Sprintf("%dd", int(time.Until(expiresAt).Hours()/24)+1)
+	params.Duration = keyDuration(expiresAt)
 
 	body, err := json.Marshal(params)
 	if err != nil {
@@ -157,7 +165,7 @@ func isLiteLLMNotFound(body []byte) bool {
 func (c *Client) UpdateKeyExpiry(ctx context.Context, ref string, expiresAt time.Time) error {
 	body, err := json.Marshal(map[string]any{
 		"key":      ref,
-		"duration": fmt.Sprintf("%dd", int(time.Until(expiresAt).Hours()/24)+1),
+		"duration": keyDuration(expiresAt),
 	})
 	if err != nil {
 		return err

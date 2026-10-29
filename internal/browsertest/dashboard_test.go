@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/mxschmitt/playwright-go"
 )
@@ -94,6 +95,51 @@ func TestDashboardStates(t *testing.T) {
 			tc.check(t, loggedIn(t, tc.sub, pageOptions{}))
 		})
 	}
+}
+
+// The page writes the moment a key expires in UTC, and the browser shows it
+// in the reader's own time zone, naming the zone (#187).
+func TestDashboardShowsTheExpiryInTheReadersZone(t *testing.T) {
+	t.Parallel()
+	tokyo, err := time.LoadLocation("Asia/Tokyo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := loggedIn(t, "expiring", pageOptions{timezone: "Asia/Tokyo"})
+	shown := page.Locator("dd time.local-time")
+	attr, err := shown.GetAttribute("datetime")
+	if err != nil {
+		t.Fatal(err)
+	}
+	at, err := time.Parse(time.RFC3339, attr)
+	if err != nil {
+		t.Fatalf("datetime %q: %v", attr, err)
+	}
+	check(t, expect.Locator(shown).ToHaveText(at.In(tokyo).Format("2006-01-02 15:04")+" GMT+9"))
+}
+
+// With less than a day left the badge counts the hours rounded down, as the
+// alert above it counts the days: 23.6 hours left are "in 23 hours", not
+// "in 1 day" under an alert that says less than a day.
+func TestExpiryBadgeRoundsTheHoursDown(t *testing.T) {
+	t.Parallel()
+	page := loggedIn(t, "expiring", pageOptions{})
+	badge := page.Locator(".expiry")
+	attr, err := badge.GetAttribute("data-expires")
+	if err != nil {
+		t.Fatal(err)
+	}
+	at, err := time.Parse(time.RFC3339, attr)
+	if err != nil {
+		t.Fatalf("data-expires %q: %v", attr, err)
+	}
+	if err := page.Clock().SetFixedTime(at.Add(-23*time.Hour - 36*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := page.Reload(); err != nil {
+		t.Fatal(err)
+	}
+	check(t, expect.Locator(badge).ToHaveText("in 23 hours"))
 }
 
 // The whole life of a key in the browser: generated and shown once, copied,

@@ -84,7 +84,7 @@
         {{if lt .ExpiresInDays 0}}
           <strong>{{T .Lang "dash.expiry.expired"}}</strong> {{T .Lang "dash.expiry.expired.note"}}
         {{else if eq .ExpiresInDays 0}}
-          <strong>{{T .Lang "dash.expiry.today"}}</strong> {{T .Lang "dash.expiry.today.note"}}
+          <strong>{{T .Lang "dash.expiry.day"}}</strong> {{T .Lang "dash.expiry.day.note"}}
         {{else}}
           <strong>{{.ExpiresInDays}} {{T .Lang "badge.left"}}</strong> {{T .Lang "dash.expiry.soon.note"}}
         {{end}}
@@ -100,8 +100,10 @@
         </dd>
         <dt>{{T .Lang "dash.expires"}} <button type="button" class="help" data-help="{{T .Lang "dash.expires.help"}}">?</button></dt>
         <dd>
-          <span class="expiry" data-date="{{.APIKey.ExpiresAt.Format "2006-01-02"}}"{{if .ExpiryUrgent}} data-urgent{{end}}></span>
-          &nbsp;{{.APIKey.ExpiresAt.Format "2006-01-02"}}
+          {{- /* The moment the gateway stops honouring the key, in UTC. The script
+                  below shows it in the reader's own time zone. */}}
+          <span class="expiry" data-expires="{{.APIKey.ExpiresAt.UTC.Format "2006-01-02T15:04:05Z07:00"}}"{{if .ExpiryUrgent}} data-urgent{{end}}></span>
+          &nbsp;<time class="local-time" datetime="{{.APIKey.ExpiresAt.UTC.Format "2006-01-02T15:04:05Z07:00"}}">{{.APIKey.ExpiresAt.UTC.Format "2006-01-02 15:04"}} UTC</time>
         </dd>
       </dl>
 
@@ -113,7 +115,7 @@
         {{if not .KeyMissing}}
         <form method="POST" action="/key/extend" data-once>
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-          <button type="submit" class="btn btn-secondary">{{T .Lang "dash.extend"}} ({{T .Lang "dash.extend.until"}} {{.ExtendUntil}})</button>
+          <button type="submit" class="btn btn-secondary">{{T .Lang "dash.extend"}} ({{T .Lang "dash.extend.until"}} <time class="local-time" datetime="{{.ExtendUntil.UTC.Format "2006-01-02T15:04:05Z07:00"}}">{{.ExtendUntil.UTC.Format "2006-01-02 15:04"}} UTC</time>)</button>
         </form>
         {{end}}
         <form method="POST" action="/key/generate" data-once
@@ -313,7 +315,6 @@ const T_TIME = {
   day:     {{T .Lang "dash.time.day"}},
   days:    {{T .Lang "dash.time.days"}},
   expired: {{T .Lang "badge.expired"}},
-  today:   {{T .Lang "badge.today"}},
   left:    {{T .Lang "badge.daysleft"}},
 };
 
@@ -490,14 +491,43 @@ function copyModel(btn) {
   if (first) showExample(first.dataset.model);
 }
 
+// How long until at, in words: "in 5 hours". A moment that has passed is
+// "now". Singular forms matter in German: "in 1 Tagen" is wrong. round is
+// Math.floor where the text must agree with a count of whole days: rounded,
+// 23.6 hours would be "in 1 day".
+const inTime = (at, round = Math.round) => {
+  const mins = round((at - Date.now()) / 60000);
+  const unit = (n, one, many) => `${T_TIME.in} ${n} ${n === 1 ? one : many}`;
+  if (mins <= 0) return T_TIME.now;
+  if (mins < 60) return unit(mins, T_TIME.minute, T_TIME.minutes);
+  const hrs = round(mins / 60);
+  if (hrs < 24) return unit(hrs, T_TIME.hour, T_TIME.hours);
+  return unit(round(hrs / 24), T_TIME.day, T_TIME.days);
+};
+
+// Times in the reader's own zone, and named. The server writes them in UTC,
+// which someone elsewhere would have to convert: only the browser knows the
+// reader's zone.
+const pad = n => String(n).padStart(2, '0');
+document.querySelectorAll('time.local-time').forEach(el => {
+  const at = new Date(el.dateTime);
+  if (isNaN(at)) return;
+  const zone = new Intl.DateTimeFormat(document.documentElement.lang, {timeZoneName: 'short'})
+    .formatToParts(at).find(p => p.type === 'timeZoneName');
+  el.textContent = `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())} ` +
+    `${pad(at.getHours())}:${pad(at.getMinutes())}${zone ? ' ' + zone.value : ''}`;
+});
+
 // Colour expiry badges. The server decides when a key is urgent, so the
-// badge and the alert above it agree.
+// badge and the alert above it agree, and both count the whole days left,
+// rounded down. With less than a day left the badge says how long.
 document.querySelectorAll('.expiry').forEach(el => {
-  const d = new Date(el.dataset.date + 'T23:59:59');
-  const days = Math.round((d - Date.now()) / 86400000);
-  const cls = days < 0 ? 'badge-expired' : 'urgent' in el.dataset ? 'badge-warn' : 'badge-ok';
+  const at = new Date(el.dataset.expires);
+  const left = at - Date.now();
+  const days = Math.floor(left / 86400000);
+  const cls = left <= 0 ? 'badge-expired' : 'urgent' in el.dataset ? 'badge-warn' : 'badge-ok';
   el.classList.add('badge', cls);
-  el.textContent = days < 0 ? T_TIME.expired : days === 0 ? T_TIME.today : days + T_TIME.left;
+  el.textContent = left <= 0 ? T_TIME.expired : days === 0 ? inTime(at, Math.floor) : days + T_TIME.left;
 });
 
 // Quota reset, rendered relative to the reader's clock. A UTC wall time makes
@@ -507,18 +537,9 @@ document.querySelectorAll('.reset-at').forEach(el => {
   const at = new Date(el.dataset.reset);
   if (isNaN(at)) return;
 
-  const render = () => {
-    const mins = Math.round((at - Date.now()) / 60000);
-    // LiteLLM resets lazily, on the first request after the window passes, so
-    // a past timestamp means "about to", not "already did".
-    // Singular forms matter in German: "in 1 Tagen" is wrong.
-    const unit = (n, one, many) => `${T_TIME.in} ${n} ${n === 1 ? one : many}`;
-    if (mins <= 0) { el.textContent = T_TIME.now; return; }
-    if (mins < 60) { el.textContent = unit(mins, T_TIME.minute, T_TIME.minutes); return; }
-    const hrs = Math.round(mins / 60);
-    if (hrs < 24) { el.textContent = unit(hrs, T_TIME.hour, T_TIME.hours); return; }
-    el.textContent = unit(Math.round(hrs / 24), T_TIME.day, T_TIME.days);
-  };
+  // LiteLLM resets lazily, on the first request after the window passes, so
+  // a past timestamp means "about to", not "already did".
+  const render = () => { el.textContent = inTime(at); };
 
   render();
   el.title = at.toLocaleString();

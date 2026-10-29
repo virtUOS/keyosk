@@ -87,7 +87,13 @@ func TestExpiryWarningThresholds(t *testing.T) {
 		{"just outside window", 15*24*time.Hour + time.Minute, 0, 15, false},
 		{"inside window", 13*24*time.Hour + time.Minute, 0, 13, true},
 		{"tomorrow", 25*time.Hour + time.Minute, 0, 1, true},
-		{"expired", -48 * time.Hour, 0, -2, true},
+		// A minute off the day boundary: days round down, and exactly two
+		// days ago is a little more by the time it is counted.
+		{"expired", -48*time.Hour + time.Minute, 0, -2, true},
+		// Whole days round down on both sides of zero: a key that expired
+		// three hours ago has -1 days left, not 0, or the page would say it
+		// expires within a day about a key the gateway already refuses.
+		{"expired three hours ago", -3 * time.Hour, 0, -1, true},
 		{"fresh 14d key", 14*24*time.Hour + time.Minute, 14 * 24 * time.Hour, 14, false},
 		{"14d key, 5 days left", 5*24*time.Hour + time.Minute, 14 * 24 * time.Hour, 5, false},
 		{"14d key, 2 days left", 2*24*time.Hour + time.Minute, 14 * 24 * time.Hour, 2, true},
