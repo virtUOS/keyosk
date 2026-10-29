@@ -63,11 +63,10 @@ different granularity:
 The history belongs to the person, across every key they have held, so
 regenerating a key does not start it over.
 
-The page waits a few seconds for the gateway, not longer. What has not
-arrived by then is left out, and the card says that the figures may be
-incomplete; the next load, a minute later at most, reads again. While the
-gateway is down, the history is tried once every ten seconds per person
-rather than on every page load.
+The page reads the usage afresh on every load, so a request shows up as soon
+as LiteLLM has recorded it, a few seconds after the answer. It waits a few
+seconds for the gateway, not longer: what has not arrived by then is left
+out, and the card says that the figures may be incomplete.
 
 LiteLLM writes the daily totals whether or not `disable_spend_logs` is set,
 and `maximum_spend_logs_retention_period` does not remove them, so neither

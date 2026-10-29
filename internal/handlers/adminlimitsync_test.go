@@ -62,6 +62,7 @@ func newSyncTestAdmin(t *testing.T, name string) (*Admin, *database.Store, strin
 	a.cfg = &config.Config{LimitSyncInterval: 5 * time.Minute, BudgetUnit: "$"}
 	a.tmpl = parseAdminTemplate()
 	a.models = newModelCache(nil)
+	a.upstreamTimeout = pageUpstreamTimeout
 	a.csrf = csrf
 	a.sync = stub
 	return a, store, token, stub

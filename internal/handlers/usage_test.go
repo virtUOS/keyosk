@@ -15,7 +15,7 @@ import (
 
 func usageUI(t *testing.T, fake *keyprovider.Fake) *UI {
 	t.Helper()
-	return &UI{usage: newUsageCache(fake)}
+	return &UI{usage: newUsageReader(fake)}
 }
 
 // The history is the person's, across every key they have held, so a
@@ -62,7 +62,7 @@ func TestUserUsageWithoutFigures(t *testing.T) {
 		t.Error("gateway down: the report is not flagged as incomplete")
 	}
 
-	u := &UI{usage: newUsageCache(nil)}
+	u := &UI{usage: newUsageReader(nil)}
 	if got := u.userUsage(context.Background(), &database.APIKey{KeyRef: "sk-live"}, "sub-1", i18n.EN); got.Total != 0 || got.Incomplete {
 		t.Errorf("no reporter = %+v, want empty and complete", got)
 	}

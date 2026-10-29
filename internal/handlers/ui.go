@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/virtuos/keyosk/internal/config"
@@ -32,7 +33,7 @@ type UI struct {
 	flash    *keyFlash
 	csrf     *session.CSRF
 	models   *modelCache
-	usage    *usageCache
+	usage    *usageReader
 	// upstreamTimeout is how long a page waits for the gateway's reads.
 	upstreamTimeout time.Duration
 
@@ -58,13 +59,13 @@ func NewUI(cfg *config.Config, store *database.Store, sessions *session.Manager,
 	// when the provider cannot.
 	lister, _ := keys.(keyprovider.ModelLister)
 	reporter, _ := keys.(keyprovider.UsageReporter)
-	usage := newUsageCache(reporter)
+	usage := newUsageReader(reporter)
 	if cfg.UsageHistoryDays > 0 {
 		usage.windowDays = cfg.UsageHistoryDays
 	}
 	return &UI{cfg: cfg, store: store, sessions: sessions, oidc: oidc, keys: keys,
 		tmpl: tmpl, privacyTmpl: parsePrivacyTemplate(), accountTmpl: parseAccountTemplate(), aboutTmpl: parseAboutTemplate(), flash: newKeyFlash(), csrf: csrf,
-		models: newModelCache(lister), usage: usage, upstreamTimeout: dashboardUpstreamTimeout, kickSync: kickSync}
+		models: newModelCache(lister), usage: usage, upstreamTimeout: pageUpstreamTimeout, kickSync: kickSync}
 }
 
 func (u *UI) requireSession(r *http.Request) (*session.SessionUser, error) {
@@ -168,11 +169,11 @@ func (u *UI) markMissingKey(ctx context.Context, user *database.User, k *databas
 	}
 }
 
-// dashboardUpstreamTimeout is how long the dashboard waits for the gateway.
-// Its reads share this one deadline, so a slow gateway costs the page a few
-// seconds rather than the server's WriteTimeout, and what has not arrived by
-// then is left out, with the usage marked incomplete.
-const dashboardUpstreamTimeout = 5 * time.Second
+// pageUpstreamTimeout is how long a page waits for the gateway. The
+// dashboard's reads share this one deadline, so a slow gateway costs the page
+// a few seconds rather than the server's WriteTimeout, and what has not
+// arrived by then is left out, with the usage marked incomplete.
+const pageUpstreamTimeout = 5 * time.Second
 
 // Dashboard renders the user dashboard.
 func (u *UI) Dashboard(w http.ResponseWriter, r *http.Request) {
@@ -204,17 +205,35 @@ func (u *UI) Dashboard(w http.ResponseWriter, r *http.Request) {
 	// the page says the change is coming rather than showing a past date.
 	expiryPending := su.User.ProfileExpiresAt != nil && !su.User.ProfileExpiresAt.After(time.Now())
 
-	// Every read from the gateway on this page shares one deadline.
+	// Every read from the gateway on this page shares one deadline. The reads
+	// run side by side, so each has all of it: a model list that hangs does
+	// not leave the usage to be read once the deadline has passed. The lists
+	// are read on goroutines of their own, the usage below on this one.
 	gctx, cancel := context.WithTimeout(r.Context(), u.upstreamTimeout)
 	defer cancel()
+	var (
+		models     []string
+		embeddings map[string]bool
+		lists      sync.WaitGroup
+	)
+	lists.Go(func() {
+		_ = safely("list embedding models", func() error {
+			embeddings = u.models.Embeddings(gctx)
+			return nil
+		})
+	})
 
 	// Without the profile, the extend date and the model list would fall back
 	// to server-wide defaults that may not be this user's, so leave them out.
 	extendUntil := ""
-	var models []string
 	if !profileErr {
 		extendUntil = u.extendUntil(profile)
-		models = u.userModels(gctx, profile)
+		lists.Go(func() {
+			_ = safely("list models", func() error {
+				models = u.userModels(gctx, profile)
+				return nil
+			})
+		})
 	}
 
 	// The Admin link must agree with what the /admin gate allows, and both
@@ -240,6 +259,7 @@ func (u *UI) Dashboard(w http.ResponseWriter, r *http.Request) {
 			usage, keyMissing = usageReport{}, true
 		}
 	}
+	lists.Wait()
 
 	if err := u.tmpl.Execute(w, dashboardData{
 		User:            su.User,
@@ -257,7 +277,7 @@ func (u *UI) Dashboard(w http.ResponseWriter, r *http.Request) {
 		SuccessorURL:    u.cfg.SuccessorURL,
 		PrivacyNotice:   hasPrivacyNotice(u.cfg),
 		Models:          models,
-		EmbeddingModels: u.models.Embeddings(gctx),
+		EmbeddingModels: embeddings,
 		Usage:           usage,
 		CSRFToken:       u.csrf.Token(w, r),
 		Lang:            lang,
@@ -842,7 +862,10 @@ func (u *UI) userUsage(ctx context.Context, k *database.APIKey, ownerID string, 
 	)
 	go func() {
 		defer close(done)
-		h, herr = u.usage.History(ctx, ownerID)
+		herr = safely("read usage history", func() (err error) {
+			h, err = u.usage.History(ctx, ownerID)
+			return err
+		})
 	}()
 	windows, werr := u.quotaWindows(ctx, k.KeyRef, ownerID, lang)
 	<-done
