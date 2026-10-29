@@ -97,8 +97,9 @@ docker compose -f dev/docker-compose.yml --profile keycloak up -d --wait
 
 Admin console: <http://localhost:8082> (`admin` / `admin`).
 
-The `keyosk` realm is imported automatically with a confidential client and
-the same two users as the mock, with passwords:
+The `keyosk` realm is imported automatically with a confidential client that
+requires PKCE (S256), as the login sends it, and the same two users as the
+mock, with passwords:
 
 | User      | Password  | Email                        | Role in the app |
 | --------- | --------- | ---------------------------- | --------------- |
