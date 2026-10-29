@@ -181,6 +181,35 @@ func TestModelChipCopiesName(t *testing.T) {
 	check(t, expect.Locator(chip).ToHaveText("mock-large"))
 }
 
+// The base URL and the example each have a copy button of their own.
+//
+// Not parallel: the browser's contexts share one clipboard, and the other
+// tests that copy would write to it in between.
+func TestExampleCopies(t *testing.T) {
+	page := loggedIn(t, "student", pageOptions{clipboard: true})
+	readClip := func() any {
+		clip, err := page.Evaluate("navigator.clipboard.readText()")
+		check(t, err)
+		return clip
+	}
+
+	click(t, page.Locator("#base-url-val + .copy-btn"))
+	check(t, expect.Locator(page.Locator("#base-url-val + .copy-btn")).ToHaveText("Copied!"))
+	base, err := page.Locator("#base-url-val").TextContent()
+	check(t, err)
+	if clip := readClip(); clip != strings.TrimSpace(base) {
+		t.Errorf("clipboard = %q, want the base URL %q", clip, base)
+	}
+
+	click(t, page.Locator("#curl-copy"))
+	check(t, expect.Locator(page.Locator("#curl-copy")).ToHaveText("Copied!"))
+	code, err := page.Locator("#curl-code").TextContent()
+	check(t, err)
+	if clip := readClip(); clip != code || !strings.HasPrefix(code, "curl ") {
+		t.Errorf("clipboard = %q, want the example %q", clip, code)
+	}
+}
+
 // A dashboard whose session ends goes to the login on its own.
 func TestSessionExpiryRedirectsToLogin(t *testing.T) {
 	t.Parallel()
