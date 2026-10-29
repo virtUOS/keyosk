@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"html/template"
@@ -32,6 +33,8 @@ type Admin struct {
 	tmpl     *template.Template
 	csrf     *session.CSRF
 	sync     LimitSync
+	// upstreamTimeout is how long the panel waits for the gateway's model list.
+	upstreamTimeout time.Duration
 }
 
 // LimitSync is the background limit sync, as the admin pages use it: they
@@ -85,7 +88,7 @@ func NewAdmin(cfg *config.Config, store *database.Store, sessions *session.Manag
 	// when the provider cannot.
 	lister, _ := keys.(keyprovider.ModelLister)
 	return &Admin{cfg: cfg, store: store, sessions: sessions, keys: keys,
-		models: newModelCache(lister), tmpl: tmpl, csrf: csrf, sync: sync}
+		models: newModelCache(lister), tmpl: tmpl, csrf: csrf, sync: sync, upstreamTimeout: pageUpstreamTimeout}
 }
 
 // actor is the admin performing the current request, or nil when the session
@@ -313,6 +316,11 @@ func (a *Admin) Panel(w http.ResponseWriter, r *http.Request) {
 		actorID = user.ID
 	}
 	lang := i18n.FromRequest(r)
+	// The model list comes from the gateway: on a hung one the form comes back
+	// at the deadline with the last good list rather than after the client's
+	// timeout.
+	mctx, cancel := context.WithTimeout(r.Context(), a.upstreamTimeout)
+	defer cancel()
 	if err := a.tmpl.Execute(w, adminData{
 		Lang:            lang,
 		Theme:           ThemeFromRequest(r),
@@ -321,7 +329,7 @@ func (a *Admin) Panel(w http.ResponseWriter, r *http.Request) {
 		User:            user,
 		IsAdmin:         true,
 		PrivacyNotice:   hasPrivacyNotice(a.cfg),
-		AvailableModels: a.models.Models(r.Context()),
+		AvailableModels: a.models.Models(mctx),
 		DefaultKeyDays:  a.cfg.KeyDurationDays,
 		Profiles:        profiles,
 		Users:           users,

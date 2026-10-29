@@ -158,8 +158,8 @@ curl http://localhost:4000/chat/completions \
   -d '{"model": "mock-small", "max_tokens": 20, "messages": [{"role": "user", "content": "hi"}]}'
 ```
 
-Usage can take up to a minute to reach the dashboard: LiteLLM writes its spend
-log in batches, and the dashboard caches what it read for 60 seconds.
+Usage reaches the dashboard a few seconds late: LiteLLM writes its spend log
+in batches. The dashboard reads it afresh on every load.
 
 With a small budget, send `max_tokens` as the example does. LiteLLM reserves
 a request's worst-case cost against the budget until the answer is settled,

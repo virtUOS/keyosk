@@ -73,9 +73,8 @@ when it is missing from them, it is just not listed.
 
 Usage from a request reaches the dashboard late, which is not a bug:
 
-- LiteLLM records spend in batches, a few seconds after the request.
-- The dashboard caches usage for 60 seconds, so a page loaded right after a
-  key was generated keeps showing "no usage" for up to a minute.
+- LiteLLM records spend in batches, a few seconds after the request. The
+  dashboard reads usage afresh on every load, so load it again.
 - Send test requests with `max_tokens`. LiteLLM reserves a request's
   worst-case cost against the budget until the answer is settled; without
   `max_tokens` that can be the whole remaining budget, and a request sent right

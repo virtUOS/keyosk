@@ -20,11 +20,18 @@ const modelCacheTTL = 5 * time.Minute
 // load, each waiting out the client's timeout.
 const modelFailureTTL = 10 * time.Second
 
+// modelRefreshTimeout bounds a refresh, which its callers do not cancel: one
+// that has not finished by then has failed, and the gateway client's own
+// timeout plays no part.
+const modelRefreshTimeout = 10 * time.Second
+
 // cached is one list the cache holds: the last good value, when it was
 // fetched, and when a refresh last failed. The lock covers the fields; a
 // refresh runs outside it, one at a time.
 type cached[T any] struct {
 	ttl time.Duration
+	// timeout bounds a refresh.
+	timeout time.Duration
 
 	mu        sync.Mutex
 	value     T
@@ -36,7 +43,8 @@ type cached[T any] struct {
 // get returns the value, refreshing it through fetch when it is stale. A
 // failed refresh keeps the last good value and is not tried again for
 // modelFailureTTL. A caller whose ctx ends first gets the last good value
-// too; the refresh goes on, and the next call finds its result.
+// too; the refresh goes on until its own timeout, and the next call finds
+// its result.
 func (c *cached[T]) get(ctx context.Context, what string, fetch func(context.Context) (T, error)) T {
 	c.mu.Lock()
 	v := c.value
@@ -47,7 +55,15 @@ func (c *cached[T]) get(ctx context.Context, what string, fetch func(context.Con
 	}
 
 	ch := c.refresh.DoChan("", func() (any, error) {
-		v, err := fetch(context.WithoutCancel(ctx))
+		// The refresh runs on a goroutine of singleflight's, which raises a
+		// panic in it again where nothing can recover it, so it is caught here.
+		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), c.timeout)
+		defer cancel()
+		var v T
+		err := safely("list "+what, func() (err error) {
+			v, err = fetch(rctx)
+			return err
+		})
 		c.mu.Lock()
 		defer c.mu.Unlock()
 		if err != nil {
@@ -85,8 +101,8 @@ type modelCache struct {
 func newModelCache(l keyprovider.ModelLister) *modelCache {
 	e, _ := l.(keyprovider.EmbeddingLister)
 	return &modelCache{lister: l, embedder: e,
-		models:     cached[[]string]{ttl: modelCacheTTL},
-		embeddings: cached[map[string]bool]{ttl: modelCacheTTL}}
+		models:     cached[[]string]{ttl: modelCacheTTL, timeout: modelRefreshTimeout},
+		embeddings: cached[map[string]bool]{ttl: modelCacheTTL, timeout: modelRefreshTimeout}}
 }
 
 // Embeddings reports which models the gateway serves as embedding models, so

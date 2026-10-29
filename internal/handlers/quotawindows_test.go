@@ -12,7 +12,7 @@ import (
 )
 
 func windowsUI(fake *keyprovider.Fake) *UI {
-	return &UI{usage: newUsageCache(fake), keys: fake}
+	return &UI{usage: newUsageReader(fake), keys: fake}
 }
 
 // A profile can hold several allowances at once, and the card shows a bar per
