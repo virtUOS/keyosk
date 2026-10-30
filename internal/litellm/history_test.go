@@ -16,7 +16,7 @@ import (
 // "models", which the dashboard must not show.
 func activityDay(date string, total int64, groups string) string {
 	return fmt.Sprintf(`{"date":%q,
-	  "metrics":{"spend":0.6,"prompt_tokens":0,"completion_tokens":0,"total_tokens":%d,
+	  "metrics":{"spend":0.5,"prompt_tokens":0,"completion_tokens":0,"total_tokens":%d,
 	    "successful_requests":0,"failed_requests":0,"api_requests":0},
 	  "breakdown":{
 	    "models":{"openai/mock-small":{"metrics":{"total_tokens":999,"api_requests":99}}},
@@ -77,6 +77,9 @@ func TestHistoryReadsDailyActivity(t *testing.T) {
 		h.Days[1].Day != "2026-10-14" || h.Days[1].Tokens != 120 {
 		t.Errorf("days = %+v, want 30 on the 13th and 120 on the 14th", h.Days)
 	}
+	if h.Days[0].Spend != 0.5 || h.Days[1].Spend != 0.5 {
+		t.Errorf("days = %+v, want each day's spend", h.Days)
+	}
 
 	if len(h.Models) != 2 {
 		t.Fatalf("models = %+v, want mock-small and mock-large", h.Models)
@@ -120,11 +123,32 @@ func TestHistorySumsADaySplitOverPages(t *testing.T) {
 	if strings.Join(pages, ",") != "1,2" {
 		t.Errorf("read pages %v, want 1 then 2", pages)
 	}
-	if len(h.Days) != 1 || h.Days[0].Tokens != 90 {
-		t.Errorf("days = %+v, want one day of 90 tokens", h.Days)
+	if len(h.Days) != 1 || h.Days[0].Tokens != 90 || h.Days[0].Spend != 1 {
+		t.Errorf("days = %+v, want one day of 90 tokens and 1.0 spend", h.Days)
 	}
 	if len(h.Models) != 1 || h.Models[0].Requests != 3 || h.Models[0].TotalTokens != 90 {
 		t.Errorf("models = %+v, want mock-small: 3 requests, 90 tokens", h.Models)
+	}
+}
+
+// A day that cost something is on the chart even without tokens, as with a
+// model priced per request; a day with neither is left out.
+func TestHistoryKeepsADayWithSpendButNoTokens(t *testing.T) {
+	day := func(date string, spend float64) string {
+		return fmt.Sprintf(`{"date":%q,"metrics":{"spend":%v,"total_tokens":0,"api_requests":1},
+		  "breakdown":{"model_groups":{}}}`, date, spend)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(activityPage(false, day("2026-10-13", 0), day("2026-10-14", 0.25))))
+	}))
+	defer srv.Close()
+
+	h, err := NewClient(srv.URL, "mk").History(context.Background(), "owner-1", 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(h.Days) != 1 || h.Days[0].Day != "2026-10-14" || h.Days[0].Spend != 0.25 {
+		t.Errorf("days = %+v, want only the 14th with 0.25 spend", h.Days)
 	}
 }
 

@@ -118,12 +118,14 @@ type WindowUsage struct {
 	PerKey bool
 }
 
-// DailyUsage is one day's token consumption for a person.
+// DailyUsage is one day's consumption for a person.
 type DailyUsage struct {
 	// Day is the UTC date the tokens were spent on, as YYYY-MM-DD.
 	Day string
 	// Tokens is the total consumed that day, prompt and completion together.
 	Tokens int64
+	// Spend is what that day cost, in the gateway's budget unit.
+	Spend float64
 }
 
 // ModelUsage is one model's share of a person's consumption.

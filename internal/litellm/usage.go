@@ -26,10 +26,11 @@ func keyHash(key string) string {
 // activityMetrics is the part of a /user/daily/activity total the portal
 // reads.
 type activityMetrics struct {
-	PromptTokens     int64 `json:"prompt_tokens"`
-	CompletionTokens int64 `json:"completion_tokens"`
-	TotalTokens      int64 `json:"total_tokens"`
-	APIRequests      int64 `json:"api_requests"`
+	Spend            float64 `json:"spend"`
+	PromptTokens     int64   `json:"prompt_tokens"`
+	CompletionTokens int64   `json:"completion_tokens"`
+	TotalTokens      int64   `json:"total_tokens"`
+	APIRequests      int64   `json:"api_requests"`
 }
 
 // dailyActivityPage is one page of /user/daily/activity.
@@ -63,7 +64,8 @@ const activityPageSize = 1000
 const activityMaxPages = 20
 
 // History returns what ownerID consumed over the last days days, across every
-// key they have held: per-day token totals and a per-model breakdown.
+// key they have held: per-day token and spend totals and a per-model
+// breakdown.
 //
 // Both come from the daily totals LiteLLM keeps per user, key and model. They
 // are written whether or not per-request logging is on, and are not removed
@@ -84,7 +86,7 @@ func (c *Client) History(ctx context.Context, ownerID string, days int) (keyprov
 
 	// A page ends after a fixed number of rows, not at a day's end, so one day
 	// can arrive split over two pages. Totals are summed, never replaced.
-	tokensByDay := make(map[string]int64)
+	byDay := make(map[string]*keyprovider.DailyUsage)
 	byModel := make(map[string]*keyprovider.ModelUsage)
 	for page := 1; ; page++ {
 		if page > activityMaxPages {
@@ -96,7 +98,13 @@ func (c *Client) History(ctx context.Context, ownerID string, days int) (keyprov
 			return keyprovider.History{}, err
 		}
 		for _, r := range body.Results {
-			tokensByDay[r.Date] += r.Metrics.TotalTokens
+			d, ok := byDay[r.Date]
+			if !ok {
+				d = &keyprovider.DailyUsage{Day: r.Date}
+				byDay[r.Date] = d
+			}
+			d.Tokens += r.Metrics.TotalTokens
+			d.Spend += r.Metrics.Spend
 			for name, g := range r.Breakdown.ModelGroups {
 				m, ok := byModel[name]
 				if !ok {
@@ -115,9 +123,9 @@ func (c *Client) History(ctx context.Context, ownerID string, days int) (keyprov
 	}
 
 	var h keyprovider.History
-	for day, tokens := range tokensByDay {
-		if tokens > 0 {
-			h.Days = append(h.Days, keyprovider.DailyUsage{Day: day, Tokens: tokens})
+	for _, d := range byDay {
+		if d.Tokens > 0 || d.Spend > 0 {
+			h.Days = append(h.Days, *d)
 		}
 	}
 	sort.Slice(h.Days, func(i, j int) bool { return h.Days[i].Day < h.Days[j].Day })

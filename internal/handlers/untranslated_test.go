@@ -104,8 +104,14 @@ func TestDashboardRendersNoRawCatalogueKeys(t *testing.T) {
 	// there rather than in the markup. Stripping scripts hid exactly that,
 	// and nine keys shipped missing before this was caught by hand.
 	//
-	// Tags are dropped so a src="/static/help.js" is not read as a key.
-	text := regexp.MustCompile(`<[^>]*>`).ReplaceAllString(buf.String(), " ")
+	// Tags are dropped so a src="/static/help.js" is not read as a key, but
+	// the attributes that put text on the page are kept: a help popover's
+	// text lives in data-help, and a missing key there showed nowhere else.
+	out := buf.String()
+	text := regexp.MustCompile(`<[^>]*>`).ReplaceAllString(out, " ")
+	for _, m := range regexp.MustCompile(`\s(?:data-help|aria-label|title|placeholder|alt)="([^"]*)"`).FindAllStringSubmatch(out, -1) {
+		text += " " + m[1]
+	}
 
 	// Catalogue keys are dotted lowercase identifiers like "dash.quota.used".
 	raw := regexp.MustCompile(`\b(dash|help|badge|admin|nav)\.[a-z][a-z.]*[a-z]\b`)

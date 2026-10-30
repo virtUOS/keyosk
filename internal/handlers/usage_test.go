@@ -23,14 +23,17 @@ func usageUI(t *testing.T, fake *keyprovider.Fake) *UI {
 func TestUserUsageReportsTheOwnersHistory(t *testing.T) {
 	fake := keyprovider.NewFake()
 	fake.UsageByOwner = map[string][]keyprovider.DailyUsage{
-		"sub-1": {{Day: "2026-08-01", Tokens: 150}, {Day: "2026-08-03", Tokens: 7}},
+		"sub-1": {{Day: "2026-08-01", Tokens: 150, Spend: 0.5}, {Day: "2026-08-03", Tokens: 7, Spend: 0.25}},
 	}
 	u := usageUI(t, fake)
 
 	for _, ref := range []string{"sk-old", "sk-new"} {
 		got := u.userUsage(context.Background(), &database.APIKey{KeyRef: ref}, "sub-1", i18n.EN)
-		if got.Total != 157 {
-			t.Errorf("%s: Total = %d, want 157", ref, got.Total)
+		if got.Total != 157 || got.Spend != 0.75 {
+			t.Errorf("%s: Total = %d, Spend = %v; want 157 and 0.75", ref, got.Total, got.Spend)
+		}
+		if got.WindowDays != usageWindowDays {
+			t.Errorf("%s: WindowDays = %d, want %d", ref, got.WindowDays, usageWindowDays)
 		}
 		if len(got.Days) != 2 {
 			t.Fatalf("%s: got %d days, want 2", ref, len(got.Days))
@@ -109,9 +112,9 @@ func TestDashboardRendersUsage(t *testing.T) {
 		Bars: []usageBar{
 			{Label: "01", Title: "2026-08-01", Tokens: 10},
 			{Label: "02", Title: "2026-08-02"}, // no traffic: drawn as a gap
-			{Label: "03", Title: "2026-08-03", Tokens: 40},
+			{Label: "03", Title: "2026-08-03", Tokens: 40, Spend: 0.25},
 		},
-		Total: 50, Peak: 40,
+		Total: 50, Spend: 0.25, Peak: 40, WindowDays: 30,
 	}
 	var buf bytes.Buffer
 	if err := parseDashboardTemplate().Execute(&buf, withUsage); err != nil {
@@ -131,8 +134,33 @@ func TestDashboardRendersUsage(t *testing.T) {
 	if !strings.Contains(out, "height:25%") {
 		t.Error("10 of 40 tokens should render at 25%")
 	}
-	if !strings.Contains(out, "50") {
-		t.Error("total not rendered")
+	if !strings.Contains(out, "<strong>50</strong> Tokens") || !strings.Contains(out, "· $0.25 insgesamt</span>") {
+		t.Error("total tokens and spend not rendered")
+	}
+	// The chart says what it shows, and each bar its unit and cost.
+	if !strings.Contains(out, "Tokens pro Tag, letzte 30 Tage") {
+		t.Error("chart title not rendered")
+	}
+	if !strings.Contains(out, "in den letzten 30 Tagen") {
+		t.Error("the note should name the window's length")
+	}
+	if !strings.Contains(out, `data-help="2026-08-03: 40 Tokens · $0.25"`) {
+		t.Error("a bar should show its day, tokens and cost")
+	}
+	// A screen reader gets the figures from the chart, not the title again.
+	if !strings.Contains(out, `role="img"`) || !strings.Contains(out, `aria-label="50 Tokens · $0.25 insgesamt"`) {
+		t.Error("the chart should be labelled with its totals")
+	}
+
+	// A long window draws weeks, and the title and note follow it.
+	buf.Reset()
+	weekly := withUsage
+	weekly.Usage.WindowDays = 365
+	if err := parseDashboardTemplate().Execute(&buf, weekly); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if !strings.Contains(buf.String(), "Tokens pro Woche, letzte 365 Tage") || !strings.Contains(buf.String(), "in den letzten 365 Tagen") {
+		t.Error("a 365-day window should be titled per week, and the note say 365 days")
 	}
 
 	buf.Reset()

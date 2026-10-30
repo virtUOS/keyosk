@@ -20,6 +20,8 @@ type usageBar struct {
 	// Title is the bucket's date or date range, shown on hover.
 	Title  string
 	Tokens int64
+	// Spend is what the bucket cost, in the gateway's budget unit.
+	Spend float64
 }
 
 // Bucket sizes, chosen from the window so the bar count stays readable: a
@@ -30,7 +32,7 @@ const (
 	maxLabelledBars     = 31
 )
 
-// usageBars spreads per-day token totals over the whole window of windowDays
+// usageBars spreads per-day token and spend totals over the whole window of windowDays
 // ending today, bucketed by day, ISO week or calendar month depending on how
 // long the window is. Days outside the window are ignored.
 func usageBars(days []keyprovider.DailyUsage, windowDays int, now time.Time) []usageBar {
@@ -40,9 +42,12 @@ func usageBars(days []keyprovider.DailyUsage, windowDays int, now time.Time) []u
 	today := now.UTC().Truncate(24 * time.Hour)
 	start := today.AddDate(0, 0, -(windowDays - 1))
 
-	byDay := make(map[string]int64, len(days))
+	byDay := make(map[string]keyprovider.DailyUsage, len(days))
 	for _, d := range days {
-		byDay[d.Day] += d.Tokens
+		sum := byDay[d.Day]
+		sum.Tokens += d.Tokens
+		sum.Spend += d.Spend
+		byDay[d.Day] = sum
 	}
 
 	var bars []usageBar
@@ -50,25 +55,29 @@ func usageBars(days []keyprovider.DailyUsage, windowDays int, now time.Time) []u
 	case windowDays <= maxDailyWindowDays:
 		for d := start; !d.After(today); d = d.AddDate(0, 0, 1) {
 			day := d.Format("2006-01-02")
-			bars = append(bars, usageBar{Label: d.Format("02"), Title: day, Tokens: byDay[day]})
+			bars = append(bars, usageBar{Label: d.Format("02"), Title: day, Tokens: byDay[day].Tokens, Spend: byDay[day].Spend})
 		}
 	case windowDays <= maxWeeklyWindowDays:
 		// Weeks start on Monday, like the gateway's weekly quota reset.
 		for w := mondayOf(start); !w.After(today); w = w.AddDate(0, 0, 7) {
 			end := w.AddDate(0, 0, 6)
+			sum := sumDays(byDay, w, end)
 			bars = append(bars, usageBar{
 				Label:  w.Format("01-02"),
 				Title:  fmt.Sprintf("%s – %s", w.Format("2006-01-02"), end.Format("2006-01-02")),
-				Tokens: sumDays(byDay, w, end),
+				Tokens: sum.Tokens,
+				Spend:  sum.Spend,
 			})
 		}
 	default:
 		for m := time.Date(start.Year(), start.Month(), 1, 0, 0, 0, 0, time.UTC); !m.After(today); m = m.AddDate(0, 1, 0) {
 			end := m.AddDate(0, 1, -1)
+			sum := sumDays(byDay, m, end)
 			bars = append(bars, usageBar{
 				Label:  m.Format("2006-01"),
 				Title:  m.Format("2006-01"),
-				Tokens: sumDays(byDay, m, end),
+				Tokens: sum.Tokens,
+				Spend:  sum.Spend,
 			})
 		}
 	}
@@ -92,11 +101,14 @@ func mondayOf(d time.Time) time.Time {
 	return d.AddDate(0, 0, -back)
 }
 
-// sumDays totals the tokens of every day from first to last inclusive.
-func sumDays(byDay map[string]int64, first, last time.Time) int64 {
-	var total int64
+// sumDays totals the tokens and spend of every day from first to last
+// inclusive.
+func sumDays(byDay map[string]keyprovider.DailyUsage, first, last time.Time) keyprovider.DailyUsage {
+	var total keyprovider.DailyUsage
 	for d := first; !d.After(last); d = d.AddDate(0, 0, 1) {
-		total += byDay[d.Format("2006-01-02")]
+		day := byDay[d.Format("2006-01-02")]
+		total.Tokens += day.Tokens
+		total.Spend += day.Spend
 	}
 	return total
 }
