@@ -89,6 +89,7 @@ type pageOptions struct {
 	locale      string
 	viewport    *playwright.Size
 	clipboard   bool
+	touch       bool
 	colorScheme *playwright.ColorScheme
 	// consoleErrors lets a page log errors without failing the test, for
 	// tests that make requests fail on purpose.
@@ -107,6 +108,7 @@ func newContext(t *testing.T, o pageOptions) playwright.BrowserContext {
 		Locale:      playwright.String(o.locale),
 		Viewport:    o.viewport,
 		ColorScheme: o.colorScheme,
+		HasTouch:    playwright.Bool(o.touch),
 	}
 	if o.clipboard {
 		opts.Permissions = []string{"clipboard-read", "clipboard-write"}

@@ -3,8 +3,12 @@
 // Positioned in the top layer via the popover API rather than as a CSS
 // ::after: the profiles table lives inside an overflow-x scroll container,
 // which clips absolutely-positioned children no matter how they are anchored.
+//
+// Any element with a data-help attribute gets one: the help buttons, and the
+// bars of the usage chart, which show their day's count.
 (function () {
   let popover = null;
+  let current = null;
   let hideTimer = null;
 
   // Leaving a button hides its popover only after a grace period, so the
@@ -29,6 +33,7 @@
     if (!text) return;
 
     const el = ensurePopover();
+    current = trigger;
     el.textContent = text;
     el.showPopover();
 
@@ -63,20 +68,32 @@
     if (popover && popover.matches(':popover-open')) popover.hidePopover();
   }
 
+  function isOpen() {
+    return popover !== null && popover.matches(':popover-open');
+  }
+
   function bind(el) {
-    el.addEventListener('mouseenter', () => show(el));
-    el.addEventListener('mouseleave', hideSoon);
+    // Only a mouse hovers: a tap sends mouseenter too, just before its click.
+    el.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse') show(el); });
+    el.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') hideSoon(); });
     el.addEventListener('focus', () => show(el));
     el.addEventListener('blur', hide);
-    // Touch has no hover; tapping toggles.
+    // Touch has no hover; tapping toggles. A tap focuses a button, which opens
+    // the popover before the click arrives, so the click goes by the state
+    // before the press. Tapping another trigger, such as the next bar of the
+    // chart, moves the popover there instead. A keyboard click (detail 0) has
+    // no press.
+    let openBefore = false;
+    el.addEventListener('pointerdown', () => { openBefore = current === el && isOpen(); });
     el.addEventListener('click', (e) => {
       e.preventDefault();
-      if (popover && popover.matches(':popover-open')) hide();
+      const open = e.detail === 0 ? current === el && isOpen() : openBefore;
+      if (open) hide();
       else show(el);
     });
   }
 
-  document.querySelectorAll('.help').forEach(bind);
+  document.querySelectorAll('[data-help]').forEach(bind);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hide(); });
   window.addEventListener('scroll', hide, true);
 })();

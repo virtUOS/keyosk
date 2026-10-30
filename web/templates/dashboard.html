@@ -196,7 +196,7 @@
       </p>
       <div class="usage-chart">
         {{range .Usage.Bars}}
-        <div class="usage-day" title="{{.Title}}: {{thousands .Tokens}}">
+        <div class="usage-day" data-help="{{.Title}}: {{thousands .Tokens}}">
           <div class="usage-bar" style="height:{{barPct .Tokens $.Usage.Peak}}%"></div>
           <span class="usage-label">{{.Label}}</span>
         </div>
