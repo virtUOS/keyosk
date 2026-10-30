@@ -198,6 +198,8 @@ func TestSessionExpiryRedirectsToLogin(t *testing.T) {
 }
 
 // Help buttons show their text on hover and on focus, and Escape hides it.
+// The popover stays open while the pointer is over it, so someone using a
+// screen magnifier can move onto it to read it.
 func TestHelpTooltip(t *testing.T) {
 	t.Parallel()
 	page := loggedIn(t, "student", pageOptions{})
@@ -209,6 +211,9 @@ func TestHelpTooltip(t *testing.T) {
 	check(t, help.Hover())
 	check(t, expect.Locator(popover).ToBeVisible())
 	check(t, expect.Locator(popover).ToHaveText(strings.TrimSpace(text)))
+	check(t, popover.Hover())
+	page.WaitForTimeout(600) // past the grace period
+	check(t, expect.Locator(popover).ToBeVisible())
 	check(t, page.Mouse().Move(0, 0))
 	check(t, expect.Locator(popover).ToBeHidden())
 
