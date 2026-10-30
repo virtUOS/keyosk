@@ -244,6 +244,8 @@ func TestSessionExpiryRedirectsToLogin(t *testing.T) {
 }
 
 // Help buttons show their text on hover and on focus, and Escape hides it.
+// The popover stays open while the pointer is over it, so someone using a
+// screen magnifier can move onto it to read it.
 func TestHelpTooltip(t *testing.T) {
 	t.Parallel()
 	page := loggedIn(t, "student", pageOptions{})
@@ -255,11 +257,55 @@ func TestHelpTooltip(t *testing.T) {
 	check(t, help.Hover())
 	check(t, expect.Locator(popover).ToBeVisible())
 	check(t, expect.Locator(popover).ToHaveText(strings.TrimSpace(text)))
+	check(t, popover.Hover())
+	page.WaitForTimeout(600) // past the grace period
+	check(t, expect.Locator(popover).ToBeVisible())
 	check(t, page.Mouse().Move(0, 0))
 	check(t, expect.Locator(popover).ToBeHidden())
 
 	check(t, help.Focus())
 	check(t, expect.Locator(popover).ToBeVisible())
 	check(t, page.Keyboard().Press("Escape"))
+	check(t, expect.Locator(popover).ToBeHidden())
+}
+
+// The bars of the usage chart show their day's count in the same popover. On
+// a touch screen, tapping one bar after another moves it rather than closing
+// it, and tapping the same bar again closes it. The viewport is tall enough
+// to show the chart without scrolling, since scrolling closes the popover.
+func TestUsageChartPopover(t *testing.T) {
+	t.Parallel()
+	tall := &playwright.Size{Width: 1280, Height: 2000}
+	page := loggedIn(t, "student", pageOptions{viewport: tall})
+	bar := page.Locator(".usage-day").Last()
+	popover := page.Locator(".help-popover")
+
+	check(t, bar.Hover())
+	check(t, expect.Locator(popover).ToBeVisible())
+	check(t, expect.Locator(popover).ToHaveText(regexp.MustCompile(`^\d{4}-\d{2}-\d{2}: [\d,]+$`)))
+
+	page = loggedIn(t, "student", pageOptions{viewport: tall, touch: true})
+	bars := page.Locator(".usage-day")
+	popover = page.Locator(".help-popover")
+	first, err := bars.First().GetAttribute("data-help")
+	check(t, err)
+	last, err := bars.Last().GetAttribute("data-help")
+	check(t, err)
+
+	check(t, bars.First().Tap())
+	check(t, expect.Locator(popover).ToBeVisible())
+	check(t, expect.Locator(popover).ToHaveText(first))
+	check(t, bars.Last().Tap())
+	check(t, expect.Locator(popover).ToBeVisible())
+	check(t, expect.Locator(popover).ToHaveText(last))
+	check(t, bars.Last().Tap())
+	check(t, expect.Locator(popover).ToBeHidden())
+
+	// A help button takes focus on a tap, which must not close what the tap
+	// opens.
+	help := page.Locator("button.help").First()
+	check(t, help.Tap())
+	check(t, expect.Locator(popover).ToBeVisible())
+	check(t, help.Tap())
 	check(t, expect.Locator(popover).ToBeHidden())
 }
