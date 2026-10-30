@@ -5,7 +5,7 @@ go 1.26.4
 require (
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/go-chi/chi/v5 v5.4.0
-	github.com/go-jose/go-jose/v4 v4.1.5
+	github.com/go-jose/go-jose/v4 v4.1.6
 	github.com/joho/godotenv v1.5.1
 	github.com/mxschmitt/playwright-go v0.6201.1
 	github.com/prometheus/client_golang v1.25.0
