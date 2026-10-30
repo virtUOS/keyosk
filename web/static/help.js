@@ -5,17 +5,26 @@
 // which clips absolutely-positioned children no matter how they are anchored.
 (function () {
   let popover = null;
+  let hideTimer = null;
+
+  // Leaving a button hides its popover only after a grace period, so the
+  // pointer can cross the gap onto the popover and stay there, as screen
+  // magnifier users need to read it (WCAG 1.4.13).
+  const hideDelay = 300;
 
   function ensurePopover() {
     if (popover) return popover;
     popover = document.createElement('div');
     popover.className = 'help-popover';
     popover.popover = 'manual';
+    popover.addEventListener('mouseenter', cancelHide);
+    popover.addEventListener('mouseleave', hideSoon);
     document.body.appendChild(popover);
     return popover;
   }
 
   function show(trigger) {
+    cancelHide();
     const text = trigger.getAttribute('data-help');
     if (!text) return;
 
@@ -39,13 +48,24 @@
     el.style.top = top + 'px';
   }
 
+  function cancelHide() {
+    clearTimeout(hideTimer);
+    hideTimer = null;
+  }
+
+  function hideSoon() {
+    cancelHide();
+    hideTimer = setTimeout(hide, hideDelay);
+  }
+
   function hide() {
+    cancelHide();
     if (popover && popover.matches(':popover-open')) popover.hidePopover();
   }
 
   function bind(el) {
     el.addEventListener('mouseenter', () => show(el));
-    el.addEventListener('mouseleave', hide);
+    el.addEventListener('mouseleave', hideSoon);
     el.addEventListener('focus', () => show(el));
     el.addEventListener('blur', hide);
     // Touch has no hover; tapping toggles.
