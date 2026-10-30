@@ -109,9 +109,9 @@ func TestDashboardRendersUsage(t *testing.T) {
 		Bars: []usageBar{
 			{Label: "01", Title: "2026-08-01", Tokens: 10},
 			{Label: "02", Title: "2026-08-02"}, // no traffic: drawn as a gap
-			{Label: "03", Title: "2026-08-03", Tokens: 40},
+			{Label: "03", Title: "2026-08-03", Tokens: 40, Spend: 0.25},
 		},
-		Total: 50, Peak: 40,
+		Total: 50, Spend: 0.25, Peak: 40, WindowDays: 30,
 	}
 	var buf bytes.Buffer
 	if err := parseDashboardTemplate().Execute(&buf, withUsage); err != nil {
@@ -131,8 +131,15 @@ func TestDashboardRendersUsage(t *testing.T) {
 	if !strings.Contains(out, "height:25%") {
 		t.Error("10 of 40 tokens should render at 25%")
 	}
-	if !strings.Contains(out, "50") {
-		t.Error("total not rendered")
+	if !strings.Contains(out, "<strong>50</strong> Tokens") || !strings.Contains(out, "$0.25 insgesamt") {
+		t.Error("total tokens and spend not rendered")
+	}
+	// The chart says what it shows, and each bar its unit and cost.
+	if !strings.Contains(out, "Tokens pro Tag, letzte 30 Tage") {
+		t.Error("chart title not rendered")
+	}
+	if !strings.Contains(out, `data-help="2026-08-03: 40 Tokens · $0.25"`) {
+		t.Error("a bar should show its day, tokens and cost")
 	}
 
 	buf.Reset()

@@ -474,9 +474,13 @@ func TestE2EHistoryByModel(t *testing.T) {
 			total += m.TotalTokens
 		}
 		// Usually one day, but a run across UTC midnight spans two.
+		// The dev models are priced, so every day with traffic cost something.
 		var daily int64
 		for _, d := range h.Days {
 			daily += d.Tokens
+			if d.Spend <= 0 {
+				return fmt.Errorf("day %+v has no spend", d)
+			}
 		}
 		if len(h.Days) == 0 || daily != total {
 			return fmt.Errorf("days = %+v, want %d tokens in all", h.Days, total)

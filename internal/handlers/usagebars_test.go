@@ -13,8 +13,8 @@ var barsNow = time.Date(2026, 9, 7, 15, 0, 0, 0, time.UTC) // a Monday
 // empty strip, not a lone full-width block.
 func TestUsageBarsSpanTheWholeDailyWindow(t *testing.T) {
 	got := usageBars([]keyprovider.DailyUsage{
-		{Day: "2026-09-07", Tokens: 559},
-		{Day: "2026-09-01", Tokens: 40},
+		{Day: "2026-09-07", Tokens: 559, Spend: 0.5},
+		{Day: "2026-09-01", Tokens: 40, Spend: 0.25},
 		{Day: "2026-07-01", Tokens: 9_999}, // outside the window
 	}, 30, barsNow)
 
@@ -26,6 +26,9 @@ func TestUsageBarsSpanTheWholeDailyWindow(t *testing.T) {
 	}
 	if got[29].Tokens != 559 || got[23].Tokens != 40 {
 		t.Errorf("tokens not placed on their days: last=%d, 09-01=%d", got[29].Tokens, got[23].Tokens)
+	}
+	if got[29].Spend != 0.5 || got[23].Spend != 0.25 {
+		t.Errorf("spend not placed on their days: last=%v, 09-01=%v", got[29].Spend, got[23].Spend)
 	}
 	var total int64
 	for _, b := range got {
@@ -43,9 +46,9 @@ func TestUsageBarsSpanTheWholeDailyWindow(t *testing.T) {
 // and labels are thinned so the axis stays legible.
 func TestUsageBarsBucketLongWindowsByWeek(t *testing.T) {
 	got := usageBars([]keyprovider.DailyUsage{
-		{Day: "2026-09-07", Tokens: 10}, // Monday: first day of the last week
-		{Day: "2026-09-06", Tokens: 5},  // Sunday: last day of the week before
-		{Day: "2026-09-02", Tokens: 1},
+		{Day: "2026-09-07", Tokens: 10},            // Monday: first day of the last week
+		{Day: "2026-09-06", Tokens: 5, Spend: 0.5}, // Sunday: last day of the week before
+		{Day: "2026-09-02", Tokens: 1, Spend: 0.25},
 	}, 365, barsNow)
 
 	// 365 days back from this Monday is exactly 52 weeks, so the window
@@ -58,8 +61,8 @@ func TestUsageBarsBucketLongWindowsByWeek(t *testing.T) {
 		t.Errorf("last week = %+v, want this week's 10 tokens", last)
 	}
 	prev := got[len(got)-2]
-	if prev.Tokens != 6 {
-		t.Errorf("previous week = %d tokens, want 6 (Wed 1 + Sun 5)", prev.Tokens)
+	if prev.Tokens != 6 || prev.Spend != 0.75 {
+		t.Errorf("previous week = %d tokens, %v spend; want 6 and 0.75 (Wed + Sun)", prev.Tokens, prev.Spend)
 	}
 	if len(got) != 53 {
 		t.Errorf("got %d weeks, want 53", len(got))

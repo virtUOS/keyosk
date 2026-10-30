@@ -236,7 +236,7 @@ func TestUsageChartPopover(t *testing.T) {
 
 	check(t, bar.Hover())
 	check(t, expect.Locator(popover).ToBeVisible())
-	check(t, expect.Locator(popover).ToHaveText(regexp.MustCompile(`^\d{4}-\d{2}-\d{2}: [\d,]+$`)))
+	check(t, expect.Locator(popover).ToHaveText(regexp.MustCompile(`^\d{4}-\d{2}-\d{2}: [\d,]+ tokens · <?\$[\d.]+$`)))
 
 	page = loggedIn(t, "student", pageOptions{viewport: tall, touch: true})
 	bars := page.Locator(".usage-day")
