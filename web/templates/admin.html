@@ -97,7 +97,7 @@
               <td>
                 <strong>{{.Name}}</strong>
                 {{if .IsDefault}}<span class="badge badge-ok">{{T $.Lang "admin.default"}}</span>{{end}}
-                {{with index $.LimitSync.PendingByProfile .ID}}<br><span class="badge badge-warn" title="{{T $.Lang "admin.sync.badge.help"}}">{{.}} {{T $.Lang "admin.sync.badge"}}</span>{{end}}
+                {{with index $.LimitSync.PendingByProfile .ID}}<br><span class="badge badge-warn">{{.}} {{T $.Lang "admin.sync.badge"}}</span> <button type="button" class="help" data-help="{{T $.Lang "admin.sync.badge.help"}}">?</button>{{end}}
               </td>
               <td class="cell-prose" data-label="{{T $.Lang "admin.col.description"}}">{{.Description}}</td>
               <td data-label="{{T $.Lang "admin.col.models"}}">
@@ -292,7 +292,7 @@
                     {{if .KeyExpired}}expired{{else}}{{.KeyExpires}}{{end}}
                   </span>
                   {{if .KeyMissingSince}}
-                  <span class="badge badge-warn" title="{{T $.Lang "admin.key.missing.help"}}">{{T $.Lang "admin.key.missing"}} {{.KeyMissingSince}}</span>
+                  <span class="badge badge-warn">{{T $.Lang "admin.key.missing"}} {{.KeyMissingSince}}</span> <button type="button" class="help" data-help="{{T $.Lang "admin.key.missing.help"}}">?</button>
                   {{end}}
                 {{else}}
                   <em class="text-faint">{{T $.Lang "admin.none"}}</em>
