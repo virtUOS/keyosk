@@ -13,8 +13,8 @@ var barsNow = time.Date(2026, 9, 7, 15, 0, 0, 0, time.UTC) // a Monday
 // empty strip, not a lone full-width block.
 func TestUsageBarsSpanTheWholeDailyWindow(t *testing.T) {
 	got := usageBars([]keyprovider.DailyUsage{
-		{Day: "2026-09-07", Tokens: 559},
-		{Day: "2026-09-01", Tokens: 40},
+		{Day: "2026-09-07", Tokens: 559, Spend: 0.5},
+		{Day: "2026-09-01", Tokens: 40, Spend: 0.25},
 		{Day: "2026-07-01", Tokens: 9_999}, // outside the window
 	}, 30, barsNow)
 
@@ -26,6 +26,9 @@ func TestUsageBarsSpanTheWholeDailyWindow(t *testing.T) {
 	}
 	if got[29].Tokens != 559 || got[23].Tokens != 40 {
 		t.Errorf("tokens not placed on their days: last=%d, 09-01=%d", got[29].Tokens, got[23].Tokens)
+	}
+	if got[29].Spend != 0.5 || got[23].Spend != 0.25 {
+		t.Errorf("spend not placed on their days: last=%v, 09-01=%v", got[29].Spend, got[23].Spend)
 	}
 	var total int64
 	for _, b := range got {
@@ -39,13 +42,32 @@ func TestUsageBarsSpanTheWholeDailyWindow(t *testing.T) {
 	}
 }
 
+// The chart's title names what a bar stands for, so it must switch where
+// usageBars switches bucket size.
+func TestChartTitleFollowsTheBucketSize(t *testing.T) {
+	for _, tc := range []struct {
+		days int
+		want string
+	}{
+		{30, "dash.usagestats.chart.day"},
+		{maxDailyWindowDays, "dash.usagestats.chart.day"},
+		{maxDailyWindowDays + 1, "dash.usagestats.chart.week"},
+		{maxWeeklyWindowDays, "dash.usagestats.chart.week"},
+		{maxWeeklyWindowDays + 1, "dash.usagestats.chart.month"},
+	} {
+		if got := (usageReport{WindowDays: tc.days}).ChartTitle(); got != tc.want {
+			t.Errorf("%d days: title %q, want %q", tc.days, got, tc.want)
+		}
+	}
+}
+
 // A window too long for daily bars is bucketed by ISO week, Monday first,
 // and labels are thinned so the axis stays legible.
 func TestUsageBarsBucketLongWindowsByWeek(t *testing.T) {
 	got := usageBars([]keyprovider.DailyUsage{
-		{Day: "2026-09-07", Tokens: 10}, // Monday: first day of the last week
-		{Day: "2026-09-06", Tokens: 5},  // Sunday: last day of the week before
-		{Day: "2026-09-02", Tokens: 1},
+		{Day: "2026-09-07", Tokens: 10},            // Monday: first day of the last week
+		{Day: "2026-09-06", Tokens: 5, Spend: 0.5}, // Sunday: last day of the week before
+		{Day: "2026-09-02", Tokens: 1, Spend: 0.25},
 	}, 365, barsNow)
 
 	// 365 days back from this Monday is exactly 52 weeks, so the window
@@ -58,8 +80,8 @@ func TestUsageBarsBucketLongWindowsByWeek(t *testing.T) {
 		t.Errorf("last week = %+v, want this week's 10 tokens", last)
 	}
 	prev := got[len(got)-2]
-	if prev.Tokens != 6 {
-		t.Errorf("previous week = %d tokens, want 6 (Wed 1 + Sun 5)", prev.Tokens)
+	if prev.Tokens != 6 || prev.Spend != 0.75 {
+		t.Errorf("previous week = %d tokens, %v spend; want 6 and 0.75 (Wed + Sun)", prev.Tokens, prev.Spend)
 	}
 	if len(got) != 53 {
 		t.Errorf("got %d weeks, want 53", len(got))
@@ -78,12 +100,12 @@ func TestUsageBarsBucketLongWindowsByWeek(t *testing.T) {
 // Beyond two years the buckets are calendar months.
 func TestUsageBarsBucketVeryLongWindowsByMonth(t *testing.T) {
 	got := usageBars([]keyprovider.DailyUsage{
-		{Day: "2026-09-07", Tokens: 3},
+		{Day: "2026-09-07", Tokens: 3, Spend: 0.5},
 		{Day: "2026-08-31", Tokens: 4},
 	}, 1000, barsNow)
 
 	last := got[len(got)-1]
-	if last.Title != "2026-09" || last.Tokens != 3 {
+	if last.Title != "2026-09" || last.Tokens != 3 || last.Spend != 0.5 {
 		t.Errorf("last month = %+v", last)
 	}
 	if got[len(got)-2].Tokens != 4 {

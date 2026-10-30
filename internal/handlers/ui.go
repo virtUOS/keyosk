@@ -797,6 +797,11 @@ func (u *UI) keyDuration(p *database.Profile) int {
 type usageReport struct {
 	Days  []keyprovider.DailyUsage
 	Total int64
+	// Spend is what Days cost together, in the gateway's budget unit.
+	Spend float64
+	// WindowDays is how many days back Days reaches, for the chart's title
+	// and the note above it.
+	WindowDays int
 	// Bars is Days spread over the whole reporting window, one column per
 	// day, week or month depending on the window's length, empty buckets
 	// included — so the chart says when a key was used, not just how much.
@@ -836,6 +841,20 @@ func (r usageReport) AnyPerKey() bool {
 		}
 	}
 	return false
+}
+
+// ChartTitle is the catalogue key of the chart's heading, which names what a
+// bar stands for: a day, a week or a month, as usageBars picks it from the
+// window's length.
+func (r usageReport) ChartTitle() string {
+	switch {
+	case r.WindowDays <= maxDailyWindowDays:
+		return "dash.usagestats.chart.day"
+	case r.WindowDays <= maxWeeklyWindowDays:
+		return "dash.usagestats.chart.week"
+	default:
+		return "dash.usagestats.chart.month"
+	}
 }
 
 // quotaWindowView is one quota window as the dashboard renders it.
@@ -890,8 +909,10 @@ func (u *UI) userUsage(ctx context.Context, k *database.APIKey, ownerID string, 
 	days := h.Days
 	rep.Days = days
 	rep.Models = h.Models
+	rep.WindowDays = u.usage.windowDays
 	for _, d := range days {
 		rep.Total += d.Tokens
+		rep.Spend += d.Spend
 	}
 	if len(days) > 0 {
 		rep.Bars = usageBars(days, u.usage.windowDays, time.Now())
