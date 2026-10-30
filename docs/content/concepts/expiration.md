@@ -1,5 +1,17 @@
 # Key expiration
 
+## When a key expires
+
+A key expires exactly its profile's key validity after it was generated or
+last extended, to the minute: a 30-day key generated at 10:15 stops working
+at 10:15 thirty days later. The gateway is told the same moment.
+
+The dashboard shows that moment in the time zone of the reader's device, and
+counts the whole days left, rounded down; with less than a day left the badge
+says how many hours. The expiry emails give the date, the time and the time
+zone, which is the server's: set `TZ` (see [Configuration](../configuration.md)),
+or the emails give the time in UTC.
+
 ## How extending works
 
 Extend sets the expiry to **now + the profile's key validity**. It does not add

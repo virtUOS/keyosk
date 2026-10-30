@@ -253,8 +253,9 @@ func TestE2EKeyLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse expiry %q: %v", info.Info.Expires, err)
 	}
-	if d := expires.Sub(want); d < -36*time.Hour || d > 36*time.Hour {
-		t.Errorf("expires = %s, want about %s", expires, want)
+	// To the minute: the gateway is told the seconds until the expiry.
+	if d := expires.Sub(want); d < -time.Minute || d > time.Minute {
+		t.Errorf("expires = %s, want %s to the minute", expires, want)
 	}
 
 	// A deleted key is gone, both for the portal and for the user. (Its

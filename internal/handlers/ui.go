@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html/template"
 	"log/slog"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -96,7 +97,7 @@ type dashboardData struct {
 	NewKey        string
 	IsAdmin       bool
 	APIBaseURL    string
-	ExtendUntil   string
+	ExtendUntil   time.Time
 	ExpiresInDays int
 	ExpiryUrgent  bool
 	ProfileName   string
@@ -225,7 +226,7 @@ func (u *UI) Dashboard(w http.ResponseWriter, r *http.Request) {
 
 	// Without the profile, the extend date and the model list would fall back
 	// to server-wide defaults that may not be this user's, so leave them out.
-	extendUntil := ""
+	var extendUntil time.Time
 	if !profileErr {
 		extendUntil = u.extendUntil(profile)
 		lists.Go(func() {
@@ -656,12 +657,14 @@ func recordNote(storeErr error) string {
 	return ""
 }
 
-// daysUntilExpiry reports whole days remaining; negative once expired.
+// daysUntilExpiry reports the whole days left, rounded down on either side of
+// zero: 0 with less than a day left, negative from the moment the key has
+// expired.
 func daysUntilExpiry(k *database.APIKey) int {
 	if k == nil {
 		return 0
 	}
-	return int(time.Until(k.ExpiresAt).Hours() / 24)
+	return int(math.Floor(time.Until(k.ExpiresAt).Hours() / 24))
 }
 
 // isExpiryUrgent marks the point where the dashboard nags rather than informs:
@@ -911,13 +914,13 @@ func (u *UI) userModels(ctx context.Context, p *database.Profile) []string {
 	return u.models.Models(ctx)
 }
 
-// extendUntil is the expiry date the Extend button will set, formatted for
-// display. Extend moves expiry to a full period from now rather than adding to
-// whatever remains, so the button names the resulting date instead of promising
-// "+N days" — an addition it does not perform. Same source as ExtendKey, so the
-// two cannot drift.
-func (u *UI) extendUntil(p *database.Profile) string {
-	return time.Now().AddDate(0, 0, u.keyDuration(p)).Format("2006-01-02")
+// extendUntil is the expiry the Extend button will set. Extend moves expiry to
+// a full period from now rather than adding to whatever remains, so the
+// button names the resulting moment instead of promising "+N days" — an
+// addition it does not perform. Same source as ExtendKey, so the two cannot
+// drift.
+func (u *UI) extendUntil(p *database.Profile) time.Time {
+	return time.Now().AddDate(0, 0, u.keyDuration(p))
 }
 
 func (u *UI) resolveProfile(r *http.Request, user *database.User) (*database.Profile, error) {

@@ -32,6 +32,9 @@ type Reminder struct {
 	frontend string
 	// thresholds are sorted narrowest first, which Run relies on.
 	thresholds []int
+	// loc is the time zone the mails give the expiry in: the server's, set
+	// with TZ. A mail cannot know its reader's.
+	loc *time.Location
 }
 
 func NewReminder(store *database.Store, n Notifier, frontendURL string, thresholds []int) *Reminder {
@@ -39,7 +42,7 @@ func NewReminder(store *database.Store, n Notifier, frontendURL string, threshol
 		thresholds = DefaultThresholds
 	}
 	return &Reminder{store: store, notifier: n, frontend: frontendURL,
-		thresholds: slices.Sorted(slices.Values(thresholds))}
+		thresholds: slices.Sorted(slices.Values(thresholds)), loc: time.Local}
 }
 
 // Run sends any notices due now. It is safe to call repeatedly: a notice is
@@ -154,18 +157,23 @@ func (r *Reminder) message(k database.ExpiringKey, days int) Message {
 	whenDE := "in " + pluralDaysDE(days)
 	whenEN := "in " + pluralDaysEN(days)
 	if days == 1 {
-		whenDE, whenEN = "morgen", "tomorrow"
+		// Less than a day left may end later today or tomorrow, depending on
+		// the time and the reader's zone, so the mail names neither.
+		whenDE, whenEN = "innerhalb eines Tages", "within a day"
 	}
 
 	name := k.Name
 	if name == "" {
 		name = k.Email
 	}
-	date := k.ExpiresAt.Format("2006-01-02")
+	// The moment the key expires, in the server's zone and naming it, so
+	// the reader can tell what it is in theirs.
+	at := k.ExpiresAt.In(r.loc)
+	date, clock, zone := at.Format("2006-01-02"), at.Format("15:04"), at.Format("MST")
 
 	body := fmt.Sprintf(`Hallo %s,
 
-Ihr KI-API-Schlüssel (%s…) läuft %s ab, am %s.
+Ihr KI-API-Schlüssel (%s…) läuft %s ab, am %s um %s (%s).
 
 Sie können ihn mit einem Klick um einen vollen Zeitraum verlängern oder
 einen neuen erzeugen:
@@ -179,7 +187,7 @@ ignorieren; er wird von selbst ungültig.
 
 Hello %s,
 
-your AI API key (%s…) expires %s, on %s.
+your AI API key (%s…) expires %s, on %s at %s %s.
 
 You can extend it for a full period with one click, or generate a
 replacement, at:
@@ -188,8 +196,8 @@ replacement, at:
 
 If you no longer need the key you can ignore this message; it will stop
 working on its own.
-`, name, k.KeyPrefix, whenDE, date, r.frontend,
-		name, k.KeyPrefix, whenEN, date, r.frontend)
+`, name, k.KeyPrefix, whenDE, date, clock, zone, r.frontend,
+		name, k.KeyPrefix, whenEN, date, clock, zone, r.frontend)
 
 	return Message{
 		To:      k.Email,

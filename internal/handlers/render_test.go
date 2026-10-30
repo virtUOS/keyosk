@@ -101,7 +101,7 @@ func TestRetiredPortalHidesGenerateAndExtend(t *testing.T) {
 		Lang:        i18n.EN,
 		User:        &database.User{Name: "T", Email: "t@example.com"},
 		CSRFToken:   "TOK",
-		ExtendUntil: "2026-12-01",
+		ExtendUntil: time.Date(2026, 12, 1, 10, 0, 0, 0, time.UTC),
 	}
 
 	withKey := base
