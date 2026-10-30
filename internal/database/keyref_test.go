@@ -12,8 +12,8 @@ import (
 
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/sqlitedialect"
-	"github.com/uptrace/bun/driver/sqliteshim"
 	"github.com/uptrace/bun/migrate"
+	_ "modernc.org/sqlite"
 
 	"github.com/virtuos/keyosk/internal/database/migrations"
 )
@@ -88,7 +88,7 @@ func TestScrubReportsABlockedCheckpoint(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "data.db")
 	// As Open, but with a short busy timeout: the checkpoint waits that long
 	// for the reader before it gives up.
-	sqldb, err := sql.Open(sqliteshim.ShimName,
+	sqldb, err := sql.Open("sqlite",
 		"file:"+path+"?_journal_mode=WAL&_busy_timeout=50&_txlock=immediate&_foreign_keys=on")
 	if err != nil {
 		t.Fatal(err)

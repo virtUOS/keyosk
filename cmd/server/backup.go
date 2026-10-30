@@ -12,8 +12,8 @@ import (
 
 // backupDatabase writes a copy of the database to target. It is consistent
 // while the server runs and writes: VACUUM INTO reads the database in one
-// transaction, like the sqlite3 shell's .backup, and is plain SQL, so it works
-// with whichever driver sqliteshim picked and needs no sqlite3 in the image.
+// transaction, like the sqlite3 shell's .backup, and is plain SQL, so it needs
+// no sqlite3 in the image.
 //
 // The copy is written to a temporary file next to target and renamed into
 // place once complete, so a backup that fails halfway leaves no partial file
