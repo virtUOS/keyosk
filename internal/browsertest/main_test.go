@@ -89,6 +89,7 @@ type pageOptions struct {
 	locale      string
 	viewport    *playwright.Size
 	clipboard   bool
+	touch       bool
 	colorScheme *playwright.ColorScheme
 	// timezone is the browser's time zone, such as "Asia/Tokyo"; empty
 	// keeps the machine's.
@@ -110,6 +111,7 @@ func newContext(t *testing.T, o pageOptions) playwright.BrowserContext {
 		Locale:      playwright.String(o.locale),
 		Viewport:    o.viewport,
 		ColorScheme: o.colorScheme,
+		HasTouch:    playwright.Bool(o.touch),
 	}
 	if o.clipboard {
 		opts.Permissions = []string{"clipboard-read", "clipboard-write"}
