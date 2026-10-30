@@ -192,20 +192,22 @@
     {{end}}
 
     {{if .Usage.Days}}
+      {{$chart := printf (T .Lang "dash.usagestats.chart") .Usage.WindowDays}}
+      <h3 class="usage-title">{{$chart}} <button type="button" class="help" data-help="{{T .Lang "dash.usagestats.chart.help"}}">?</button></h3>
       <p style="margin-bottom:1rem">
         <strong>{{thousands .Usage.Total}}</strong> {{T .Lang "dash.tokens"}}
-        <span class="text-muted">({{T .Lang "dash.usagestats.total"}})</span>
+        <span class="text-muted">· {{fmtBudget .Usage.Spend .BudgetUnit}} {{T .Lang "dash.usagestats.total"}}</span>
       </p>
-      <div class="usage-chart">
+      <div class="usage-chart" role="img" aria-label="{{$chart}}">
         {{range .Usage.Bars}}
-        <div class="usage-day" title="{{.Title}}: {{thousands .Tokens}}">
+        <div class="usage-day" data-help="{{.Title}}: {{thousands .Tokens}} {{T $.Lang "dash.tokens"}} · {{fmtBudget .Spend $.BudgetUnit}}">
           <div class="usage-bar" style="height:{{barPct .Tokens $.Usage.Peak}}%"></div>
           <span class="usage-label">{{.Label}}</span>
         </div>
         {{end}}
       </div>
       {{if .Usage.Models}}
-      <h3 class="usage-models-title">{{T .Lang "dash.usagestats.bymodel"}}</h3>
+      <h3 class="usage-title">{{T .Lang "dash.usagestats.bymodel"}}</h3>
       <div class="table-wrap">
         <table class="usage-models">
           <thead>

@@ -16,7 +16,7 @@ import (
 // "models", which the dashboard must not show.
 func activityDay(date string, total int64, groups string) string {
 	return fmt.Sprintf(`{"date":%q,
-	  "metrics":{"spend":0.6,"prompt_tokens":0,"completion_tokens":0,"total_tokens":%d,
+	  "metrics":{"spend":0.5,"prompt_tokens":0,"completion_tokens":0,"total_tokens":%d,
 	    "successful_requests":0,"failed_requests":0,"api_requests":0},
 	  "breakdown":{
 	    "models":{"openai/mock-small":{"metrics":{"total_tokens":999,"api_requests":99}}},
@@ -77,6 +77,9 @@ func TestHistoryReadsDailyActivity(t *testing.T) {
 		h.Days[1].Day != "2026-10-14" || h.Days[1].Tokens != 120 {
 		t.Errorf("days = %+v, want 30 on the 13th and 120 on the 14th", h.Days)
 	}
+	if h.Days[0].Spend != 0.5 || h.Days[1].Spend != 0.5 {
+		t.Errorf("days = %+v, want each day's spend", h.Days)
+	}
 
 	if len(h.Models) != 2 {
 		t.Fatalf("models = %+v, want mock-small and mock-large", h.Models)
@@ -120,8 +123,8 @@ func TestHistorySumsADaySplitOverPages(t *testing.T) {
 	if strings.Join(pages, ",") != "1,2" {
 		t.Errorf("read pages %v, want 1 then 2", pages)
 	}
-	if len(h.Days) != 1 || h.Days[0].Tokens != 90 {
-		t.Errorf("days = %+v, want one day of 90 tokens", h.Days)
+	if len(h.Days) != 1 || h.Days[0].Tokens != 90 || h.Days[0].Spend != 1 {
+		t.Errorf("days = %+v, want one day of 90 tokens and 1.0 spend", h.Days)
 	}
 	if len(h.Models) != 1 || h.Models[0].Requests != 3 || h.Models[0].TotalTokens != 90 {
 		t.Errorf("models = %+v, want mock-small: 3 requests, 90 tokens", h.Models)

@@ -787,6 +787,10 @@ func (u *UI) keyDuration(p *database.Profile) int {
 type usageReport struct {
 	Days  []keyprovider.DailyUsage
 	Total int64
+	// Spend is what Days cost together, in the gateway's budget unit.
+	Spend float64
+	// WindowDays is how many days back Days reaches, for the chart's title.
+	WindowDays int
 	// Bars is Days spread over the whole reporting window, one column per
 	// day, week or month depending on the window's length, empty buckets
 	// included — so the chart says when a key was used, not just how much.
@@ -880,8 +884,10 @@ func (u *UI) userUsage(ctx context.Context, k *database.APIKey, ownerID string, 
 	days := h.Days
 	rep.Days = days
 	rep.Models = h.Models
+	rep.WindowDays = u.usage.windowDays
 	for _, d := range days {
 		rep.Total += d.Tokens
+		rep.Spend += d.Spend
 	}
 	if len(days) > 0 {
 		rep.Bars = usageBars(days, u.usage.windowDays, time.Now())

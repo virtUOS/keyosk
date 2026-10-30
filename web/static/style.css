@@ -958,7 +958,7 @@ a.tab-btn.active:hover { color: var(--primary); }
   margin-top: .3rem;
 }
 
-.usage-models-title {
+.usage-title {
   margin-top: 1rem;
   font-size: .95rem;
 }
