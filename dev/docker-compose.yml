@@ -75,7 +75,7 @@ services:
   # The models in litellm-config.yaml reach no provider: they answer with a
   # canned response, which is enough to create spend for the dashboard.
   litellm:
-    image: ghcr.io/berriai/litellm-database:v1.106.2
+    image: ghcr.io/berriai/litellm-database:v1.106.6
     command: ["--config", "/config.yaml", "--port", "4000"]
     environment:
       DATABASE_URL: postgresql://litellm:litellm@litellm-db:5432/litellm
@@ -105,7 +105,7 @@ services:
       start_period: 60s
 
   mailpit:
-    image: axllent/mailpit:v1.31.5
+    image: axllent/mailpit:v1.32.0
     ports:
       - "1025:1025"
       - "8025:8025"
