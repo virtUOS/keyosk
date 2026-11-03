@@ -32,7 +32,7 @@ RUN mkdir /out/data
 # ships CA certificates (outbound TLS to LiteLLM and the OIDC provider) and
 # time zone data (times render in the zone set via TZ). Pinned by digest of
 # the multi-arch index; Dependabot keeps it current.
-FROM gcr.io/distroless/static-debian13:latest@sha256:58133991db06659feaabe0f4e97a35cebf15ef4ea08f8a4c6d2ee5f75e4aa6a0
+FROM gcr.io/distroless/static-debian13:latest@sha256:448810357cc8e67b7208988abdba0f5ec3d3aebee0a5b13eb624979792cffc0f
 
 COPY --from=build /out/keyosk /usr/local/bin/keyosk
 
