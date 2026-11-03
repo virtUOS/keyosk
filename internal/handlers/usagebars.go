@@ -40,7 +40,7 @@ func usageBars(days []keyprovider.DailyUsage, windowDays int, now time.Time) []u
 		windowDays = 1
 	}
 	today := now.UTC().Truncate(24 * time.Hour)
-	start := today.AddDate(0, 0, -(windowDays - 1))
+	start := keyprovider.WindowStart(now, windowDays)
 
 	byDay := make(map[string]keyprovider.DailyUsage, len(days))
 	for _, d := range days {

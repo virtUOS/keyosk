@@ -54,6 +54,7 @@ func TestHistoryReadsDailyActivity(t *testing.T) {
 	}))
 	defer srv.Close()
 
+	today := time.Now().UTC()
 	h, err := NewClient(srv.URL, "mk").History(context.Background(), "owner-1", 30)
 	if err != nil {
 		t.Fatal(err)
@@ -62,12 +63,19 @@ func TestHistoryReadsDailyActivity(t *testing.T) {
 	if got := query["user_id"]; len(got) != 1 || got[0] != "owner-1" {
 		t.Errorf("user_id = %v, want the owner", got)
 	}
-	today := time.Now().UTC()
 	if got := query["end_date"]; len(got) != 1 || got[0] != today.Format("2006-01-02") {
 		t.Errorf("end_date = %v, want today", got)
 	}
-	if got := query["start_date"]; len(got) != 1 || got[0] != today.AddDate(0, 0, -30).Format("2006-01-02") {
-		t.Errorf("start_date = %v, want 30 days back", got)
+	// LiteLLM includes the start date, so 30 days ending on end_date start 29
+	// days before it. Measured from end_date rather than the clock, so that a
+	// run across midnight cannot fail this.
+	endDate := strings.Join(query["end_date"], "")
+	end, err := time.Parse("2006-01-02", endDate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := query["start_date"]; len(got) != 1 || got[0] != end.AddDate(0, 0, -29).Format("2006-01-02") {
+		t.Errorf("start_date = %v, want 29 days before end_date %s, for 30 days ending on it", got, endDate)
 	}
 	if _, ok := query["api_key"]; ok {
 		t.Error("history is filtered by key, so a rotation would start it over")

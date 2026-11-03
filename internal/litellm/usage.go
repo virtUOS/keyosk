@@ -63,9 +63,9 @@ const activityPageSize = 1000
 // answering has_more from holding the dashboard forever.
 const activityMaxPages = 20
 
-// History returns what ownerID consumed over the last days days, across every
-// key they have held: per-day token and spend totals and a per-model
-// breakdown.
+// History returns what ownerID consumed over the last days days, today
+// included, across every key they have held: per-day token and spend totals
+// and a per-model breakdown.
 //
 // Both come from the daily totals LiteLLM keeps per user, key and model. They
 // are written whether or not per-request logging is on, and are not removed
@@ -80,7 +80,7 @@ func (c *Client) History(ctx context.Context, ownerID string, days int) (keyprov
 	now := time.Now().UTC()
 	q := url.Values{}
 	q.Set("user_id", ownerID)
-	q.Set("start_date", now.AddDate(0, 0, -days).Format("2006-01-02"))
+	q.Set("start_date", keyprovider.WindowStart(now, days).Format("2006-01-02"))
 	q.Set("end_date", now.Format("2006-01-02"))
 	q.Set("page_size", strconv.Itoa(activityPageSize))
 

@@ -128,6 +128,17 @@ type DailyUsage struct {
 	Spend float64
 }
 
+// WindowStart is the first day of a window of days days ending today, as a
+// UTC midnight: the first day History asks the gateway for, and the chart's
+// first bar. Both ends are inclusive, so it is days-1 days back; a window
+// shorter than a day is today.
+func WindowStart(now time.Time, days int) time.Time {
+	if days < 1 {
+		days = 1
+	}
+	return now.UTC().Truncate(24*time.Hour).AddDate(0, 0, -(days - 1))
+}
+
 // ModelUsage is one model's share of a person's consumption.
 type ModelUsage struct {
 	Model            string
@@ -152,10 +163,10 @@ type History struct {
 // consumed. Separate from Provider because not every gateway records usage,
 // and reporting is not needed to issue or revoke keys.
 type UsageReporter interface {
-	// History returns what ownerID consumed over the last days days, across
-	// every key they have held: per-day totals oldest first and per-model
-	// totals largest first. It follows the person rather than the key, so a
-	// rotation does not start the chart over.
+	// History returns what ownerID consumed over the last days days, today
+	// included, across every key they have held: per-day totals oldest first
+	// and per-model totals largest first. It follows the person rather than
+	// the key, so a rotation does not start the chart over.
 	History(ctx context.Context, ownerID string, days int) (History, error)
 
 	// Windows reports consumption against every quota window that applies to
