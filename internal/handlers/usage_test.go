@@ -18,12 +18,19 @@ func usageUI(t *testing.T, fake *keyprovider.Fake) *UI {
 	return &UI{usage: newUsageReader(fake)}
 }
 
+// daysAgo is the UTC date n days before today, the way the gateway names a
+// day.
+func daysAgo(n int) string {
+	return time.Now().UTC().AddDate(0, 0, -n).Format("2006-01-02")
+}
+
 // The history is the person's, across every key they have held, so a
 // regenerated key shows the same chart as the one it replaced (#116).
 func TestUserUsageReportsTheOwnersHistory(t *testing.T) {
+	first, last := daysAgo(3), daysAgo(1)
 	fake := keyprovider.NewFake()
 	fake.UsageByOwner = map[string][]keyprovider.DailyUsage{
-		"sub-1": {{Day: "2026-08-01", Tokens: 150, Spend: 0.5}, {Day: "2026-08-03", Tokens: 7, Spend: 0.25}},
+		"sub-1": {{Day: first, Tokens: 150, Spend: 0.5}, {Day: last, Tokens: 7, Spend: 0.25}},
 	}
 	u := usageUI(t, fake)
 
@@ -38,9 +45,31 @@ func TestUserUsageReportsTheOwnersHistory(t *testing.T) {
 		if len(got.Days) != 2 {
 			t.Fatalf("%s: got %d days, want 2", ref, len(got.Days))
 		}
-		if got.Days[0].Day != "2026-08-01" || got.Days[0].Tokens != 150 {
+		if got.Days[0].Day != first || got.Days[0].Tokens != 150 {
 			t.Errorf("%s: first day = %+v", ref, got.Days[0])
 		}
+	}
+}
+
+// The total above the chart is the chart's total. A day the gateway returns
+// from outside the window, as it did while the query asked for one day too
+// many (#217), is in no bar, so it must not be in the total either.
+func TestUsageTotalIsTheSumOfTheBars(t *testing.T) {
+	fake := keyprovider.NewFake()
+	fake.UsageByOwner = map[string][]keyprovider.DailyUsage{
+		"sub-1": {{Day: daysAgo(30), Tokens: 1000, Spend: 5}, {Day: daysAgo(28), Tokens: 10, Spend: 0.01}},
+	}
+	got := usageUI(t, fake).userUsage(context.Background(), &database.APIKey{KeyRef: "sk-1"}, "sub-1", i18n.EN)
+
+	var tokens int64
+	var spend float64
+	for _, b := range got.Bars {
+		tokens += b.Tokens
+		spend += b.Spend
+	}
+	if tokens != 10 || got.Total != tokens || got.Spend != spend {
+		t.Errorf("Total = %d, Spend = %v, the bars sum to %d and %v; want 10 and 0.01, the day inside the window",
+			got.Total, got.Spend, tokens, spend)
 	}
 }
 

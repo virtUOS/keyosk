@@ -136,7 +136,7 @@ func TestUsageReaderReadsOneOwnerWhileAnotherReadHangs(t *testing.T) {
 // the slower of them, not for both in turn.
 func TestUserUsageReadsHistoryAndWindowsSideBySide(t *testing.T) {
 	fake := keyprovider.NewFake()
-	fake.UsageByOwner = map[string][]keyprovider.DailyUsage{"sub-1": {{Day: "2026-08-01", Tokens: 5}}}
+	fake.UsageByOwner = map[string][]keyprovider.DailyUsage{"sub-1": {{Day: daysAgo(1), Tokens: 5}}}
 	fake.WindowsByRef = map[string][]keyprovider.WindowUsage{"sk-live": {{Period: "1d", Used: 1, Limit: 2}}}
 	rep := newSlowReporter(t, fake, "sub-1")
 	rep.slowWindows = true
