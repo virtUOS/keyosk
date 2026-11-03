@@ -2,9 +2,11 @@ package database
 
 import (
 	"context"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/virtuos/keyosk/internal/database/migrations"
 )
@@ -91,8 +93,91 @@ func TestDatabaseOlderThanTheReleaseIsRefused(t *testing.T) {
 	}
 }
 
+// bun's table does not make the name unique, so a record can be doubled by
+// hand. A database with every migration up to 0.9.0 is one 0.9.0 has run on,
+// however many times each is recorded.
+func TestDoubledRecordsStillCountAsTheRelease(t *testing.T) {
+	s := testStore(t, t.Name())
+	doubled := append(slices.Clone(migrations.ReplacedByBaseline), migrations.ReplacedByBaseline[0])
+	recordedAs(t, s, doubled)
+
+	if err := s.RunMigrations(context.Background()); err != nil {
+		t.Fatalf("RunMigrations with a doubled record: %v", err)
+	}
+	if got, want := appliedMigrations(t, s), []string{migrations.BaselineName}; !slices.Equal(got, want) {
+		t.Errorf("applied migrations = %v, want %v", got, want)
+	}
+
+	// Nor does a doubled record stand in for a missing one.
+	s = testStore(t, t.Name()+"-short")
+	short := append(slices.Clone(migrations.ReplacedByBaseline[:14]), migrations.ReplacedByBaseline[0])
+	recordedAs(t, s, short)
+	if err := s.RunMigrations(context.Background()); err == nil || !strings.Contains(err.Error(), "upgrade to 0.9.0") {
+		t.Errorf("RunMigrations with a doubled record in place of a missing one = %v, want it refused", err)
+	}
+}
+
+// Started on a database this release has taken over, 0.9.0 records its first
+// two migrations, which change nothing on this schema, and fails on the
+// third, which adds a column that exists. The records it leaves do not make
+// the database an older one: they are removed, and the start goes on.
+func TestRecordsLeftByTheReleaseAfterTheTakeoverAreRemoved(t *testing.T) {
+	ctx := context.Background()
+	s := testStore(t, t.Name())
+	recordedAs(t, s, append([]string{migrations.BaselineName}, migrations.ReplacedByBaseline[:2]...))
+	before := dumpSchema(t, s.db)
+
+	if err := s.RunMigrations(ctx); err != nil {
+		t.Fatalf("RunMigrations after a 0.9.0 start on a taken-over database: %v", err)
+	}
+	if got, want := appliedMigrations(t, s), []string{migrations.BaselineName}; !slices.Equal(got, want) {
+		t.Errorf("applied migrations = %v, want %v", got, want)
+	}
+	if after := dumpSchema(t, s.db); after != before {
+		t.Errorf("removing the records changed the schema:\n%s", lineDiff(before, after))
+	}
+}
+
+// Nearly every start finds nothing to take over. Finding that out is a read,
+// and must not wait for the write lock, which a transaction takes at once
+// here and an admin command may hold at that moment.
+func TestTakeOverChecksWithoutTheWriteLock(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "keyosk.db")
+	db, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	s := NewStore(db)
+	if err := s.RunMigrations(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	writer, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writer.Close()
+	tx, err := writer.BeginTx(ctx, nil) // BEGIN IMMEDIATE: holds the write lock
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+
+	start := time.Now()
+	if err := s.takeOverReleasedMigrations(ctx); err != nil {
+		t.Fatalf("the check waited for the write lock: %v", err)
+	}
+	if waited := time.Since(start); waited > time.Second {
+		t.Errorf("the check took %v while the write lock was held", waited)
+	}
+}
+
 // There is no schema to go back to before the baseline, and dropping every
-// table would only lose the data. Rolling it back fails and changes nothing.
+// table would only lose the data. Rolling it back fails and changes nothing,
+// the record included: bun unmarks a migration only once its Down has
+// succeeded, so the tables cannot be left without the record that built them.
 func TestBaselineCannotBeRolledBack(t *testing.T) {
 	s := migratedStore(t, t.Name())
 	before := dumpSchema(t, s.db)
@@ -102,6 +187,9 @@ func TestBaselineCannotBeRolledBack(t *testing.T) {
 	}
 	if after := dumpSchema(t, s.db); after != before {
 		t.Errorf("rolling back changed the schema:\n%s", lineDiff(before, after))
+	}
+	if got, want := appliedMigrations(t, s), []string{migrations.BaselineName}; !slices.Equal(got, want) {
+		t.Errorf("applied migrations after the failed rollback = %v, want %v still", got, want)
 	}
 }
 
