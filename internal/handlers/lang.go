@@ -32,17 +32,18 @@ func langFuncs() template.FuncMap {
 			return pct
 		},
 		// quotaJSON renders a profile's quota windows for the admin form's
-		// JavaScript. A variable-length list cannot be passed as positional
-		// arguments the way the other profile fields are.
-		"quotaJSON": func(qs []database.ProfileQuota) template.JS {
+		// JavaScript, which reads them from a data attribute. A
+		// variable-length list does not fit one attribute per field the way
+		// the other profile fields do.
+		"quotaJSON": func(qs []database.ProfileQuota) string {
 			if len(qs) == 0 {
-				return template.JS("[]")
+				return "[]"
 			}
 			b, err := json.Marshal(qs)
 			if err != nil {
-				return template.JS("[]")
+				return "[]"
 			}
-			return template.JS(b)
+			return string(b)
 		},
 		// thousands renders a token count with separators (1234567 -> 1,234,567).
 		"thousands": func(n int64) string {

@@ -32,7 +32,7 @@ func TestSecurityHeadersApplied(t *testing.T) {
 		}
 	}
 	csp := rec.Header().Get("Content-Security-Policy")
-	for _, directive := range []string{"frame-ancestors 'none'", "object-src 'none'"} {
+	for _, directive := range []string{"frame-ancestors 'none'", "object-src 'none'", "script-src 'self';"} {
 		if !strings.Contains(csp, directive) {
 			t.Errorf("CSP missing %q; got %q", directive, csp)
 		}

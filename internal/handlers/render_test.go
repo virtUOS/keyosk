@@ -480,7 +480,7 @@ func TestDashboardPageFullyGerman(t *testing.T) {
 // saving wrote them back: "test quota" became "\"test quota\"" and grew a
 // pair of quotes on every edit.
 //
-// html/template quotes the JS string itself, so the value must arrive bare.
+// html/template escapes the attribute itself, so the value must arrive bare.
 func TestAdminEditButtonPassesBareValues(t *testing.T) {
 	var buf bytes.Buffer
 	err := parseAdminTemplate().Execute(&buf, adminData{
@@ -492,14 +492,13 @@ func TestAdminEditButtonPassesBareValues(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Decode the attribute the way a browser would, then check the argument
-	// list holds the bare name rather than one wrapped in quote characters.
+	// Decode the attribute the way a browser would, then check it holds the
+	// bare name rather than one wrapped in quote characters.
 	out := html.UnescapeString(buf.String())
-	if strings.Contains(out, `openEditProfile(2, "\"test quota\""`) ||
-		strings.Contains(out, `, "\"test quota\""`) {
+	if strings.Contains(out, `data-name="\"test quota\""`) {
 		t.Error("profile name carries literal quote characters")
 	}
-	if !strings.Contains(out, `"test quota"`) {
+	if !strings.Contains(out, `data-name="test quota"`) {
 		t.Error("profile name not passed to the edit button")
 	}
 }
@@ -571,7 +570,7 @@ func TestAdminEditFormsAreDialogs(t *testing.T) {
 	for _, want := range []string{
 		`<dialog id="profile-dialog"`,
 		`<dialog id="user-dialog-7"`,
-		`document.getElementById('user-dialog-7').showModal()`,
+		`data-dialog="user-dialog-7"`,
 		`<main class="main-wide">`,
 	} {
 		if !strings.Contains(out, want) {

@@ -74,7 +74,7 @@
 
       <div class="section-head">
         <h2>{{T .Lang "admin.profiles"}}</h2>
-        <button type="button" class="btn btn-sm btn-primary" onclick="openNewProfile()">+ {{T .Lang "admin.form.new"}}</button>
+        <button type="button" class="btn btn-sm btn-primary" id="profile-new">+ {{T .Lang "admin.form.new"}}</button>
       </div>
 
       <div class="table-wrap">
@@ -123,14 +123,14 @@
                 <button type="button" class="row-menu-btn" popovertarget="profile-menu-{{.ID}}"
                         aria-label="{{T $.Lang "admin.actions"}}: {{.Name}}">⋮</button>
                 <div id="profile-menu-{{.ID}}" class="row-menu" popover>
-                  <button type="button"
-                          onclick="openEditProfile({{.ID}}, {{.Name}}, {{.Description}},
-                            '{{range $i,$m := .Models}}{{if $i}},{{end}}{{$m}}{{end}}',
-                            '{{if .TPMLimit}}{{.TPMLimit}}{{end}}',
-                            '{{if .RPMLimit}}{{.RPMLimit}}{{end}}',
-                            '{{if .KeyDurationDays}}{{.KeyDurationDays}}{{end}}',
-                            {{quotaJSON .Quotas}},
-                            {{.IsDefault}})">{{T $.Lang "admin.edit"}}</button>
+                  <button type="button" class="profile-edit"
+                          data-id="{{.ID}}" data-name="{{.Name}}" data-desc="{{.Description}}"
+                          data-models="{{range $i,$m := .Models}}{{if $i}},{{end}}{{$m}}{{end}}"
+                          data-tpm="{{if .TPMLimit}}{{.TPMLimit}}{{end}}"
+                          data-rpm="{{if .RPMLimit}}{{.RPMLimit}}{{end}}"
+                          data-expiry="{{if .KeyDurationDays}}{{.KeyDurationDays}}{{end}}"
+                          data-quotas="{{quotaJSON .Quotas}}"
+                          {{if .IsDefault}}data-default{{end}}>{{T $.Lang "admin.edit"}}</button>
                   <hr>
                   {{if .IsDefault}}
                   <button type="button" class="menu-danger" disabled>
@@ -138,7 +138,7 @@
                   </button>
                   {{else}}
                   <form method="POST" action="/admin/profiles/{{.ID}}/delete"
-                        onsubmit="return confirm('Delete profile {{.Name}}?')">
+                        data-confirm="Delete profile {{.Name}}?">
                     <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
                     <button class="menu-danger">{{T $.Lang "admin.delete"}}</button>
                   </form>
@@ -210,7 +210,7 @@
               <label>{{T .Lang "admin.form.quota"}} <button type="button" class="help" data-help="{{T $.Lang "help.usagelimit"}}">?</button></label>
               <div id="pf-quotas"></div>
               <p class="quota-error" id="pf-quota-error" role="alert" hidden></p>
-              <button type="button" class="btn btn-sm btn-secondary" id="pf-quota-add" onclick="addQuotaRow()">
+              <button type="button" class="btn btn-sm btn-secondary" id="pf-quota-add">
                 + {{T .Lang "admin.form.quota.add"}}
               </button>
               <div class="form-hint">{{T .Lang "admin.form.quota.hint"}} {{T .Lang "admin.form.quota.unit"}} {{.BudgetUnit}}</div>
@@ -226,7 +226,7 @@
           </div>
           <div class="btn-row">
             <button type="submit" class="btn btn-primary" id="profile-submit-btn">{{T .Lang "admin.form.create"}}</button>
-            <button type="button" class="btn btn-secondary" onclick="this.closest('dialog').close()">{{T .Lang "admin.cancel"}}</button>
+            <button type="button" class="btn btn-secondary" data-close-dialog>{{T .Lang "admin.cancel"}}</button>
           </div>
         </form>
       </dialog>
@@ -302,12 +302,11 @@
                 <button type="button" class="row-menu-btn" popovertarget="user-menu-{{.ID}}"
                         aria-label="{{T $.Lang "admin.actions"}}: {{.Email}}">⋮</button>
                 <div id="user-menu-{{.ID}}" class="row-menu" popover>
-                  <button type="button"
-                          onclick="document.getElementById('user-dialog-{{.ID}}').showModal()">{{T $.Lang "admin.edit"}}</button>
+                  <button type="button" data-dialog="user-dialog-{{.ID}}">{{T $.Lang "admin.edit"}}</button>
                   <hr>
                   {{if .HasKey}}
                   <form method="POST" action="/admin/users/{{.ID}}/key/revoke"
-                        onsubmit="return confirm('Revoke the API key for {{.Email}}? They lose access immediately.')">
+                        data-confirm="Revoke the API key for {{.Email}}? They lose access immediately.">
                     <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
                     <button class="menu-danger">{{T $.Lang "admin.revoke.key"}}</button>
                   </form>
@@ -348,8 +347,7 @@
           </div>
           <div class="form-group">
             <label for="user-{{.ID}}-until">{{T $.Lang "admin.until"}}</label>
-            <input type="date" id="user-{{.ID}}-until" name="expires_at" value="{{.ExpiresAt}}"
-                   oninput="toggleExpiryOptions(this)">
+            <input type="date" id="user-{{.ID}}-until" name="expires_at" value="{{.ExpiresAt}}">
             <div class="form-hint">{{T $.Lang "admin.until.help"}}</div>
           </div>
           {{/* What happens at the deadline only means anything once there is
@@ -373,7 +371,7 @@
           </div>
           <div class="btn-row">
             <button type="submit" class="btn btn-primary">{{T $.Lang "admin.save"}}</button>
-            <button type="button" class="btn btn-secondary" onclick="this.closest('dialog').close()">{{T $.Lang "admin.cancel"}}</button>
+            <button type="button" class="btn btn-secondary" data-close-dialog>{{T $.Lang "admin.cancel"}}</button>
           </div>
         </form>
       </dialog>
@@ -451,8 +449,7 @@
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         <input type="search" id="admin-filter" autocomplete="off"
                placeholder="{{T .Lang "admin.admins.filter"}}"
-               aria-label="{{T .Lang "admin.admins.filter"}}"
-               oninput="filterCandidates(this.value)">
+               aria-label="{{T .Lang "admin.admins.filter"}}">
         <select name="user_id" id="admin-candidates" required aria-label="{{T .Lang "admin.admins.choose"}}">
           <option value="">{{T .Lang "admin.admins.choose"}}</option>
           {{range .Candidates}}
@@ -508,297 +505,33 @@
 
 {{template "footer" .}}
 
-<script>
-// The deadline's follow-up controls are meaningless without a date, so they
-// appear with one. Server-rendered state decides the initial visibility; this
-// only keeps it in step as the admin types.
-function toggleExpiryOptions(input) {
-  const opts = input.closest('form').querySelector('.expiry-options');
-  if (opts) opts.hidden = !input.value;
+{{/* What the script needs from the server, as data: the script itself is a
+     static file, since the CSP allows no inline script. html/template writes
+     each value as JSON here. */}}
+<script type="application/json" id="page-data">
+{
+  "profile": {
+    "newTitle": {{T .Lang "admin.form.new"}},
+    "editTitle": {{T .Lang "admin.form.edit"}},
+    "create": {{T .Lang "admin.form.create"}},
+    "update": {{T .Lang "admin.form.update"}}
+  },
+  "quota": {
+    "duplicate": {{T .Lang "admin.form.quota.duplicate"}},
+    "exceeds": {{T .Lang "admin.form.quota.exceeds"}},
+    "amount": {{T .Lang "admin.form.quota.amount"}},
+    "delete": {{T .Lang "admin.delete"}}
+  },
+  "periods": [
+    ["1h", {{T .Lang "period.hourly"}}, 1],
+    ["24h", {{T .Lang "period.daily"}}, 24],
+    ["7d", {{T .Lang "period.weekly"}}, 168],
+    ["30d", {{T .Lang "period.monthly"}}, 720]
+  ]
 }
-
-// The promotion form's dropdown, narrowed by the filter box. Options are
-// swapped in and out rather than hidden, since not every browser hides a
-// hidden <option> inside a native <select>.
-const adminCandidates = Array.from(
-  document.querySelectorAll('#admin-candidates option')).filter(o => o.value !== '');
-function filterCandidates(q) {
-  q = q.trim().toLowerCase();
-  const sel = document.getElementById('admin-candidates');
-  sel.replaceChildren(sel.options[0], ...adminCandidates.filter(
-    o => q === '' || o.textContent.toLowerCase().includes(q)));
-}
-
-// The filter boxes above the users and the audit log hide the rows that do
-// not contain every word typed, in any order, so "alice revoked" finds what
-// happened to Alice without knowing which column comes first. Each row's text
-// is gathered once, from its cells without the row menu, whose entries
-// ("Edit", "Revoke key") would otherwise match every row. Not from innerText:
-// a hidden row's innerText falls back to the raw text, menu included.
-function rowText(tr) {
-  return Array.from(tr.cells).filter(td => !td.classList.contains('cell-menu'))
-    .map(td => td.textContent).join(' ').replace(/\s+/g, ' ').toLowerCase();
-}
-document.querySelectorAll('.table-filter').forEach(input => {
-  const tbody = document.getElementById(input.dataset.filter).tBodies[0];
-  const noMatch = tbody.querySelector('.no-match');
-  const rows = Array.from(tbody.rows).filter(r => !r.classList.contains('empty-row'))
-    .map(r => [r, rowText(r)]);
-  const apply = () => {
-    const words = input.value.toLowerCase().split(/\s+/).filter(Boolean);
-    let shown = 0;
-    for (const [r, text] of rows) {
-      r.hidden = !words.every(w => text.includes(w));
-      if (!r.hidden) shown++;
-    }
-    noMatch.hidden = shown > 0 || rows.length === 0;
-  };
-  input.addEventListener('input', apply);
-  // A browser may bring the box back filled, on a reload or on the way back
-  // from another page; the rows then agree with it from the start.
-  apply();
-});
-
-// The selected tab lives in the URL hash, so a reload or a shared link comes
-// back to it. "admin" is accepted as an alias for "admins".
-function showTab(name) {
-  if (name === 'admin') name = 'admins';
-  if (!document.getElementById('tab-' + name)) name = 'profiles';
-  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
-}
-
-document.querySelector('.tabs').addEventListener('click', e => {
-  const btn = e.target.closest('.tab-btn');
-  if (!btn) return;
-  showTab(btn.dataset.tab);
-  // replaceState: no scroll jump, no history entry per click. The query is
-  // dropped so a reload does not show a stale flash message again.
-  history.replaceState(null, '', location.pathname + '#' + btn.dataset.tab);
-});
-
-window.addEventListener('hashchange', () => showTab(location.hash.slice(1)));
-
-const profileDialog = document.getElementById('profile-dialog');
-const PROFILE_TEXT = {
-  newTitle: {{T .Lang "admin.form.new"}},
-  editTitle: {{T .Lang "admin.form.edit"}},
-  create: {{T .Lang "admin.form.create"}},
-  update: {{T .Lang "admin.form.update"}},
-};
-
-function openNewProfile() {
-  resetProfileForm();
-  profileDialog.showModal();
-  document.getElementById('pf-name').focus();
-}
-
-function openEditProfile(id, name, desc, models, tpm, rpm, expiry, quotas, isDefault) {
-  document.getElementById('pf-id').value = id;
-  document.getElementById('pf-name').value = name;
-  document.getElementById('pf-desc').value = desc;
-  setSelectedModels(models);
-  document.getElementById('pf-tpm').value = tpm;
-  document.getElementById('pf-rpm').value = rpm;
-  document.getElementById('pf-expiry').value = expiry;
-  setQuotaRows(quotas);
-  setDefaultLocked(isDefault);
-  document.getElementById('profile-form-title').textContent = PROFILE_TEXT.editTitle + ' ' + name;
-  document.getElementById('profile-submit-btn').textContent = PROFILE_TEXT.update;
-  document.getElementById('profile-form').action = '/admin/profiles/' + id;
-  profileDialog.showModal();
-  document.getElementById('pf-name').focus();
-}
-
-// Quota windows are a repeating group: a profile can hold several allowances
-// at once ("0.10/day AND 5/month"), which the gateway enforces
-// independently. Rows post as parallel quota_budget/quota_period arrays and
-// are paired by position on the server.
-const QUOTA_TEXT = {
-  duplicate: {{T .Lang "admin.form.quota.duplicate"}},
-  exceeds: {{T .Lang "admin.form.quota.exceeds"}},
-};
-// Each period carries its length in hours, the same as periodHours on the
-// server, so the length comparison below does not depend on the menu order.
-const QUOTA_PERIODS = [
-  ['1h', {{T .Lang "period.hourly"}}, 1],
-  ['24h', {{T .Lang "period.daily"}}, 24],
-  ['7d', {{T .Lang "period.weekly"}}, 168],
-  ['30d', {{T .Lang "period.monthly"}}, 720],
-];
-
-function quotaRow(budget, period) {
-  const row = document.createElement('div');
-  row.className = 'quota-row';
-
-  const n = document.createElement('input');
-  n.type = 'number';
-  n.name = 'quota_budget';
-  n.min = '0';
-  n.step = 'any';
-  n.placeholder = {{T .Lang "admin.form.quota.amount"}};
-  n.value = budget || '';
-  n.addEventListener('input', checkQuotaRows);
-
-  const sel = document.createElement('select');
-  sel.name = 'quota_period';
-  for (const [value, label] of QUOTA_PERIODS) {
-    const o = document.createElement('option');
-    o.value = value;
-    o.textContent = label;
-    if (value === period) o.selected = true;
-    sel.appendChild(o);
-  }
-  sel.addEventListener('change', checkQuotaRows);
-
-  const del = document.createElement('button');
-  del.type = 'button';
-  del.className = 'btn btn-danger-quiet';
-  del.textContent = '×';
-  del.setAttribute('aria-label', {{T .Lang "admin.delete"}});
-  del.onclick = () => { row.remove(); checkQuotaRows(); };
-
-  row.append(n, sel, del);
-  return row;
-}
-
-// A new row starts at the first period no other row uses, so adding a
-// second window does not silently repeat the first one's period. Once every
-// period is taken there is nothing left to add, and the button hides.
-function addQuotaRow(budget, period) {
-  if (!period) {
-    const used = new Set(quotaRows().map(r => r.period.value));
-    period = (QUOTA_PERIODS.find(([value]) => !used.has(value)) || QUOTA_PERIODS[0])[0];
-  }
-  document.getElementById('pf-quotas').appendChild(quotaRow(budget, period));
-  checkQuotaRows();
-}
-
-function setQuotaRows(quotas) {
-  const box = document.getElementById('pf-quotas');
-  box.textContent = '';
-  for (const q of (quotas || [])) addQuotaRow(q.Budget, q.Period);
-  checkQuotaRows();
-}
-
-function quotaRows() {
-  return [...document.querySelectorAll('#pf-quotas .quota-row')].map(row => ({
-    amount: row.querySelector('input[name="quota_budget"]'),
-    period: row.querySelector('select[name="quota_period"]'),
-  }));
-}
-
-// checkQuotaRows marks the windows the server would refuse, so the browser
-// holds the form back and points at the mistake instead of the admin losing
-// every change to a failed save. It checks what parseQuotaWindows and
-// checkWindowsBind in internal/handlers/admin.go check; keep the two in step.
-// A row without a positive amount is dropped on save, so it is left out.
-function checkQuotaRows() {
-  const rows = quotaRows();
-  document.getElementById('pf-quota-add').hidden = rows.length >= QUOTA_PERIODS.length;
-  const entry = p => QUOTA_PERIODS.find(([value]) => value === p);
-  const hours = p => entry(p)[2];
-  const label = p => entry(p)[1];
-  const active = rows.filter(r => parseFloat(r.amount.value.replace(',', '.')) > 0);
-  // A period's first row is the window; later rows on it are duplicates, and
-  // only the window takes part in the length comparison, as on the server.
-  const windows = active.filter((r, i) => !active.slice(0, i).some(o => o.period.value === r.period.value));
-  for (const r of rows) {
-    r.amount.setCustomValidity('');
-    r.period.setCustomValidity('');
-  }
-  active.forEach(r => {
-    if (!windows.includes(r)) {
-      r.period.setCustomValidity(QUOTA_TEXT.duplicate);
-      return;
-    }
-    const amount = parseFloat(r.amount.value.replace(',', '.'));
-    const longer = windows.find(o => hours(o.period.value) > hours(r.period.value) &&
-      parseFloat(o.amount.value.replace(',', '.')) < amount);
-    if (longer) {
-      r.amount.setCustomValidity(QUOTA_TEXT.exceeds.replace('{period}', label(longer.period.value)));
-    }
-  });
-  // The browser only shows a field's message on submit; this keeps the first
-  // one in view while the admin is still editing.
-  const error = document.getElementById('pf-quota-error');
-  const first = rows.flatMap(r => [r.amount, r.period]).find(f => f.validationMessage);
-  error.textContent = first ? first.validationMessage : '';
-  error.hidden = !first;
-}
-
-// Models arrive as a comma-separated string; tick the matching boxes, or fall
-// back to the free-text input when the gateway list was unavailable.
-function setSelectedModels(models) {
-  const wanted = new Set((models || '').split(',').map(s => s.trim()).filter(Boolean));
-  const picker = document.getElementById('pf-model-picker');
-  if (!picker) {
-    const free = document.getElementById('pf-models');
-    if (free) free.value = models || '';
-    return;
-  }
-  picker.querySelectorAll('input[name="model"]').forEach(cb => {
-    cb.checked = wanted.has(cb.value);
-  });
-}
-
-// The default profile cannot be saved as not the default; the server refuses
-// it. Its checkbox is locked instead, and since a disabled box is not posted,
-// a hidden field keeps sending is_default for it.
-function setDefaultLocked(locked) {
-  const box = document.getElementById('pf-default');
-  box.checked = locked;
-  box.disabled = locked;
-  document.getElementById('pf-default-keep').disabled = !locked;
-  document.getElementById('pf-default-hint').hidden = !locked;
-}
-
-function resetProfileForm() {
-  document.getElementById('pf-id').value = '';
-  document.getElementById('profile-form').reset();
-  setDefaultLocked(false);
-  setSelectedModels('');
-  setQuotaRows([]);
-  document.getElementById('profile-form').action = '/admin/profiles';
-  document.getElementById('profile-form-title').textContent = PROFILE_TEXT.newTitle;
-  document.getElementById('profile-submit-btn').textContent = PROFILE_TEXT.create;
-}
-
-// Row menus are popovers, which the browser centres on the screen; this hangs
-// each one under the right edge of its ⋮ button instead, and flips it above
-// the button when there is no room below. It is placed before it shows, so
-// it never flashes in the middle, and corrected once it can be measured.
-document.querySelectorAll('.row-menu').forEach(menu => {
-  const btn = document.querySelector(`[popovertarget="${menu.id}"]`);
-  menu.addEventListener('beforetoggle', e => {
-    if (e.newState !== 'open') return;
-    const b = btn.getBoundingClientRect();
-    menu.style.top = (b.bottom + 4) + 'px';
-    menu.style.right = Math.max(8, innerWidth - b.right) + 'px';
-  });
-  menu.addEventListener('toggle', e => {
-    if (e.newState !== 'open') return;
-    const b = btn.getBoundingClientRect();
-    const m = menu.getBoundingClientRect();
-    if (m.bottom > innerHeight - 8) {
-      menu.style.top = Math.max(8, b.top - m.height - 4) + 'px';
-    }
-  });
-  // Close before an entry opens a dialog. In the capture phase, so it runs
-  // ahead of the entry's own handler: closing afterwards would hand focus
-  // back to the ⋮ button behind the dialog.
-  menu.addEventListener('click', e => {
-    if (e.target.closest('button[type=button]')) menu.hidePopover();
-  }, true);
-});
-// A menu placed on the screen does not follow the page, so it closes instead.
-addEventListener('scroll', () => {
-  document.querySelectorAll('.row-menu:popover-open').forEach(m => m.hidePopover());
-}, true);
-
-// Restore tab from hash
-showTab(location.hash.slice(1));
 </script>
+<script src="/static/confirm.js"></script>
+<script src="/static/admin.js"></script>
 
 <script src="/static/help.js"></script>
 </body>

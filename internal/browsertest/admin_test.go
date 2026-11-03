@@ -4,6 +4,7 @@ package browsertest
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/mxschmitt/playwright-go"
@@ -68,6 +69,7 @@ func TestProfileDialogPrefill(t *testing.T) {
 	rowAction(t, profileRow(page, "Stacked"), "Edit")
 	check(t, expect.Locator(dialog).ToBeVisible())
 	check(t, expect.Locator(page.Locator("#pf-name")).ToHaveValue("Stacked"))
+	check(t, expect.Locator(page.Locator("#pf-desc")).ToHaveValue("Three windows at once."))
 	check(t, expect.Locator(page.Locator("#pf-quotas .quota-row")).ToHaveCount(3))
 	periods, err := page.Locator("#pf-quotas select").EvaluateAll("els => els.map(e => e.value).join(' ')")
 	check(t, err)
@@ -82,6 +84,11 @@ func TestProfileDialogPrefill(t *testing.T) {
 	check(t, expect.Locator(page.Locator("#pf-model-picker input[value='mock-small']")).ToBeChecked())
 	check(t, expect.Locator(page.Locator("#pf-model-picker input[value='mock-large']")).Not().ToBeChecked())
 	check(t, expect.Locator(page.Locator("#pf-tpm")).ToHaveValue("1000"))
+	check(t, expect.Locator(page.Locator("#pf-rpm")).ToHaveValue("10"))
+	click(t, cancel)
+
+	rowAction(t, profileRow(page, "Short keys"), "Edit")
+	check(t, expect.Locator(page.Locator("#pf-expiry")).ToHaveValue("3"))
 	click(t, cancel)
 
 	// The default profile cannot stop being the default.
@@ -91,7 +98,7 @@ func TestProfileDialogPrefill(t *testing.T) {
 	click(t, cancel)
 
 	// A new profile starts empty after an edit.
-	click(t, page.Locator("button[onclick='openNewProfile()']"))
+	click(t, page.Locator("#profile-new"))
 	check(t, expect.Locator(page.Locator("#pf-name")).ToHaveValue(""))
 	check(t, expect.Locator(page.Locator("#pf-quotas .quota-row")).ToHaveCount(0))
 	check(t, expect.Locator(page.Locator("#pf-default")).ToBeEnabled())
@@ -127,10 +134,44 @@ func TestProfileDelete(t *testing.T) {
 	t.Parallel()
 	page := loggedIn(t, "admin", adminView)
 	goTo(t, page, "/admin")
-	page.OnDialog(func(d playwright.Dialog) { _ = d.Accept() })
+	asked := make(chan string, 1)
+	page.OnDialog(func(d playwright.Dialog) {
+		asked <- d.Message()
+		_ = d.Accept()
+	})
 	rowAction(t, profileRow(page, "Unused"), "Delete")
 	check(t, expect.Locator(page.Locator(".alert").First()).ToContainText("Profile deleted"))
 	check(t, expect.Locator(profileRow(page, "Unused")).ToHaveCount(0))
+	select {
+	case msg := <-asked:
+		if msg != "Delete profile Unused?" {
+			t.Errorf("asked %q", msg)
+		}
+	default:
+		t.Error("deleted without asking")
+	}
+}
+
+// Revoking a key asks first, and a declined question sends nothing.
+func TestRevokeKeyAsksFirst(t *testing.T) {
+	t.Parallel()
+	page := loggedIn(t, "admin", adminView)
+	goTo(t, page, "/admin#users")
+	asked := make(chan string, 1)
+	page.OnDialog(func(d playwright.Dialog) {
+		asked <- d.Message()
+		_ = d.Dismiss()
+	})
+	rowAction(t, userRow(page, "expired"), "Revoke key")
+	if msg := <-asked; !strings.Contains(msg, "Revoke the API key") {
+		t.Errorf("asked %q", msg)
+	}
+	check(t, expect.Page(page).ToHaveURL(seeded.URL+"/admin#users"))
+	goTo(t, page, "/admin#users")
+	rowMenu := userRow(page, "expired").Locator(".row-menu")
+	check(t, expect.Locator(rowMenu.GetByRole("button", playwright.LocatorGetByRoleOptions{
+		Name: "Revoke key", Exact: playwright.Bool(true),
+	})).ToBeEnabled())
 }
 
 // The user dialog shows what happens at a deadline only once there is one.
@@ -235,7 +276,7 @@ func TestProfileQuotaCheck(t *testing.T) {
 	t.Parallel()
 	page := loggedIn(t, "admin", adminView)
 	goTo(t, page, "/admin")
-	click(t, page.Locator("button[onclick='openNewProfile()']"))
+	click(t, page.Locator("#profile-new"))
 
 	add := page.Locator("#profile-dialog").GetByRole("button", playwright.LocatorGetByRoleOptions{Name: "Add window"})
 	rows := page.Locator("#pf-quotas .quota-row")

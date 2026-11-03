@@ -4,11 +4,11 @@ import "net/http"
 
 // SecurityHeaders sets defensive response headers on every route.
 //
-// The CSP allows inline <script>/<style> because the templates rely on them
-// (onclick handlers, the copy/poll scripts and inline style attributes).
-// Tightening it to nonces requires reworking those templates; until then the
-// policy still blocks external script/style/frame sources, which is what stops
-// an injected <script src> or a clickjacking frame.
+// The CSP allows no inline script: the pages' scripts are static files, and
+// what they need from the server is in a <script type="application/json">
+// block, which the browser does not run. An injected <script> or onclick does
+// not run either. Inline styles are still allowed, because the templates set
+// style attributes, the usage bars' sizes among them.
 //
 // idpOrigin must be the OIDC provider's origin. Chromium applies form-action to
 // redirects that FOLLOW a form submission, not just its immediate target, so
@@ -22,7 +22,7 @@ func SecurityHeaders(secure bool, idpOrigin string) func(http.Handler) http.Hand
 	}
 
 	csp := "default-src 'self'; " +
-		"script-src 'self' 'unsafe-inline'; " +
+		"script-src 'self'; " +
 		"style-src 'self' 'unsafe-inline'; " +
 		"img-src 'self' data:; " +
 		"connect-src 'self'; " +
