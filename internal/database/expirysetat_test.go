@@ -6,35 +6,6 @@ import (
 	"time"
 )
 
-// Keys from before the column existed count their validity from creation,
-// the best record there is of when their date was set.
-func TestMigrationStartsExpirySetAtAtCreation(t *testing.T) {
-	s := testStore(t, "esa1")
-	ctx := context.Background()
-	migrateBefore(t, s, "20240015")
-
-	created := time.Now().AddDate(0, 0, -10).UTC().Truncate(time.Second)
-	if _, err := s.db.ExecContext(ctx, `
-		INSERT INTO users (id, oidc_sub, email, name, created_at, updated_at)
-		  VALUES (1,'s1','a@b.c','A',?,?);
-		INSERT INTO api_keys (user_id, key_ref, key_prefix, expires_at, created_at)
-		  VALUES (1,'ref','sk-a',?,?);
-	`, created, created, created.AddDate(0, 0, 30), created); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := s.RunMigrations(ctx); err != nil {
-		t.Fatal(err)
-	}
-	k, err := s.GetAPIKeyByUser(ctx, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !k.ExpirySetAt.Equal(created) {
-		t.Errorf("expiry_set_at = %v, want created_at %v", k.ExpirySetAt, created)
-	}
-}
-
 // Creating a key sets the start of its validity, extending moves it to now,
 // and neither touches another key.
 func TestExpirySetAtFollowsCreateAndExtend(t *testing.T) {

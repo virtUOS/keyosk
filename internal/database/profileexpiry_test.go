@@ -6,9 +6,8 @@ import (
 	"time"
 )
 
-// Every user that exists today has a permanent assignment. The new columns
-// must default to that, or an upgrade would start expiring people.
-func TestExistingUsersHaveNoDeadline(t *testing.T) {
+// An assignment is permanent until an admin gives it a deadline.
+func TestNewUserHasNoDeadline(t *testing.T) {
 	s := migratedStore(t, "pexp1")
 	ctx := context.Background()
 

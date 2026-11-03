@@ -1,0 +1,96 @@
+table api_keys
+  CREATE TABLE api_keys(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL REFERENCES users(id)ON DELETE CASCADE,key_ref TEXT NOT NULL,key_prefix TEXT NOT NULL,expires_at DATETIME NOT NULL,created_at DATETIME NOT NULL,synced_profile_id INTEGER,synced_rev INTEGER,sync_error TEXT NOT NULL DEFAULT '',sync_failed_at TIMESTAMP,synced_owner_name TEXT,synced_owner_email TEXT,missing_since TIMESTAMP,expiry_set_at TIMESTAMP)
+  column 0 id INTEGER notnull=0 default=none pk=1
+  column 1 user_id INTEGER notnull=1 default=none pk=0
+  column 2 key_ref TEXT notnull=1 default=none pk=0
+  column 3 key_prefix TEXT notnull=1 default=none pk=0
+  column 4 expires_at DATETIME notnull=1 default=none pk=0
+  column 5 created_at DATETIME notnull=1 default=none pk=0
+  column 6 synced_profile_id INTEGER notnull=0 default=none pk=0
+  column 7 synced_rev INTEGER notnull=0 default=none pk=0
+  column 8 sync_error TEXT notnull=1 default='' pk=0
+  column 9 sync_failed_at TIMESTAMP notnull=0 default=none pk=0
+  column 10 synced_owner_name TEXT notnull=0 default=none pk=0
+  column 11 synced_owner_email TEXT notnull=0 default=none pk=0
+  column 12 missing_since TIMESTAMP notnull=0 default=none pk=0
+  column 13 expiry_set_at TIMESTAMP notnull=0 default=none pk=0
+  foreign key user_id -> users(id) on update NO ACTION on delete CASCADE match NONE
+  index idx_api_keys_user_id unique=1 origin=c partial=0 (user_id ASC BINARY)
+    CREATE UNIQUE INDEX idx_api_keys_user_id ON api_keys(user_id)
+table audit_events
+  CREATE TABLE audit_events(id INTEGER PRIMARY KEY AUTOINCREMENT,created_at DATETIME NOT NULL,action TEXT NOT NULL,actor_email TEXT NOT NULL,subject_email TEXT NOT NULL,subject_id INTEGER,detail TEXT NOT NULL DEFAULT '')
+  column 0 id INTEGER notnull=0 default=none pk=1
+  column 1 created_at DATETIME notnull=1 default=none pk=0
+  column 2 action TEXT notnull=1 default=none pk=0
+  column 3 actor_email TEXT notnull=1 default=none pk=0
+  column 4 subject_email TEXT notnull=1 default=none pk=0
+  column 5 subject_id INTEGER notnull=0 default=none pk=0
+  column 6 detail TEXT notnull=1 default='' pk=0
+  index idx_audit_created_at unique=0 origin=c partial=0 (created_at DESC BINARY)
+    CREATE INDEX idx_audit_created_at ON audit_events(created_at DESC)
+  index idx_audit_subject unique=0 origin=c partial=0 (subject_id ASC BINARY)
+    CREATE INDEX idx_audit_subject ON audit_events(subject_id)
+table expiry_notices
+  CREATE TABLE expiry_notices(id INTEGER PRIMARY KEY AUTOINCREMENT,api_key_id INTEGER NOT NULL REFERENCES api_keys(id)ON DELETE CASCADE,days_before INTEGER NOT NULL,sent_at DATETIME NOT NULL)
+  column 0 id INTEGER notnull=0 default=none pk=1
+  column 1 api_key_id INTEGER notnull=1 default=none pk=0
+  column 2 days_before INTEGER notnull=1 default=none pk=0
+  column 3 sent_at DATETIME notnull=1 default=none pk=0
+  foreign key api_key_id -> api_keys(id) on update NO ACTION on delete CASCADE match NONE
+  index idx_expiry_notice_once unique=1 origin=c partial=0 (api_key_id ASC BINARY, days_before ASC BINARY)
+    CREATE UNIQUE INDEX idx_expiry_notice_once ON expiry_notices(api_key_id,days_before)
+table profile_quotas
+  CREATE TABLE profile_quotas(id INTEGER PRIMARY KEY AUTOINCREMENT,profile_id INTEGER NOT NULL REFERENCES profiles(id)ON DELETE CASCADE,period TEXT NOT NULL,budget REAL NOT NULL DEFAULT 0,UNIQUE(profile_id,period))
+  column 0 id INTEGER notnull=0 default=none pk=1
+  column 1 profile_id INTEGER notnull=1 default=none pk=0
+  column 2 period TEXT notnull=1 default=none pk=0
+  column 3 budget REAL notnull=1 default=0 pk=0
+  foreign key profile_id -> profiles(id) on update NO ACTION on delete CASCADE match NONE
+  index sqlite_autoindex_profile_quotas_1 unique=1 origin=u partial=0 (profile_id ASC BINARY, period ASC BINARY)
+table profiles
+  CREATE TABLE profiles(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL UNIQUE,description TEXT NOT NULL DEFAULT '',models TEXT NOT NULL DEFAULT '[]',tpm_limit INTEGER,rpm_limit INTEGER,max_budget REAL,budget_duration TEXT,is_default INTEGER NOT NULL DEFAULT 0,created_at DATETIME NOT NULL,updated_at DATETIME NOT NULL,key_duration_days INTEGER NOT NULL DEFAULT 0,limits_rev INTEGER NOT NULL DEFAULT 1)
+  column 0 id INTEGER notnull=0 default=none pk=1
+  column 1 name TEXT notnull=1 default=none pk=0
+  column 2 description TEXT notnull=1 default='' pk=0
+  column 3 models TEXT notnull=1 default='[]' pk=0
+  column 4 tpm_limit INTEGER notnull=0 default=none pk=0
+  column 5 rpm_limit INTEGER notnull=0 default=none pk=0
+  column 6 max_budget REAL notnull=0 default=none pk=0
+  column 7 budget_duration TEXT notnull=0 default=none pk=0
+  column 8 is_default INTEGER notnull=1 default=0 pk=0
+  column 9 created_at DATETIME notnull=1 default=none pk=0
+  column 10 updated_at DATETIME notnull=1 default=none pk=0
+  column 11 key_duration_days INTEGER notnull=1 default=0 pk=0
+  column 12 limits_rev INTEGER notnull=1 default=1 pk=0
+  index idx_profiles_single_default unique=1 origin=c partial=1 (is_default ASC BINARY)
+    CREATE UNIQUE INDEX idx_profiles_single_default ON profiles(is_default)WHERE is_default <> 0
+  index sqlite_autoindex_profiles_1 unique=1 origin=u partial=0 (name ASC BINARY)
+table sessions
+  CREATE TABLE sessions(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL REFERENCES users(id)ON DELETE CASCADE,token TEXT NOT NULL UNIQUE,id_token TEXT NOT NULL,expires_at DATETIME NOT NULL,created_at DATETIME NOT NULL)
+  column 0 id INTEGER notnull=0 default=none pk=1
+  column 1 user_id INTEGER notnull=1 default=none pk=0
+  column 2 token TEXT notnull=1 default=none pk=0
+  column 3 id_token TEXT notnull=1 default=none pk=0
+  column 4 expires_at DATETIME notnull=1 default=none pk=0
+  column 5 created_at DATETIME notnull=1 default=none pk=0
+  foreign key user_id -> users(id) on update NO ACTION on delete CASCADE match NONE
+  index idx_sessions_expires_at unique=0 origin=c partial=0 (expires_at ASC BINARY)
+    CREATE INDEX idx_sessions_expires_at ON sessions(expires_at)
+  index sqlite_autoindex_sessions_1 unique=1 origin=u partial=0 (token ASC BINARY)
+table users
+  CREATE TABLE users(id INTEGER PRIMARY KEY AUTOINCREMENT,oidc_sub TEXT NOT NULL UNIQUE,email TEXT NOT NULL,name TEXT NOT NULL DEFAULT '',profile_id INTEGER REFERENCES profiles(id),created_at DATETIME NOT NULL,updated_at DATETIME NOT NULL,profile_expires_at TIMESTAMP,profile_after_expiry INTEGER,revoke_key_at_expiry BOOLEAN NOT NULL DEFAULT 0,is_admin BOOLEAN NOT NULL DEFAULT 0)
+  column 0 id INTEGER notnull=0 default=none pk=1
+  column 1 oidc_sub TEXT notnull=1 default=none pk=0
+  column 2 email TEXT notnull=1 default=none pk=0
+  column 3 name TEXT notnull=1 default='' pk=0
+  column 4 profile_id INTEGER notnull=0 default=none pk=0
+  column 5 created_at DATETIME notnull=1 default=none pk=0
+  column 6 updated_at DATETIME notnull=1 default=none pk=0
+  column 7 profile_expires_at TIMESTAMP notnull=0 default=none pk=0
+  column 8 profile_after_expiry INTEGER notnull=0 default=none pk=0
+  column 9 revoke_key_at_expiry BOOLEAN notnull=1 default=0 pk=0
+  column 10 is_admin BOOLEAN notnull=1 default=0 pk=0
+  foreign key profile_id -> profiles(id) on update NO ACTION on delete NO ACTION match NONE
+  index idx_users_profile_expires_at unique=0 origin=c partial=0 (profile_expires_at ASC BINARY)
+    CREATE INDEX idx_users_profile_expires_at ON users(profile_expires_at)
+  index sqlite_autoindex_users_1 unique=1 origin=u partial=0 (oidc_sub ASC BINARY)

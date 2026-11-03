@@ -5,16 +5,14 @@ import (
 	"testing"
 )
 
-// The migration must carry an existing single quota into the new table, or
-// every profile silently becomes unlimited on upgrade.
-func TestMigrationCarriesExistingQuota(t *testing.T) {
+// A window comes back with the budget and period it was saved with.
+func TestProfileWindowRoundTrips(t *testing.T) {
 	s := testStore(t, "qw1")
 	ctx := context.Background()
 	if err := s.RunMigrations(ctx); err != nil {
 		t.Fatal(err)
 	}
 
-	// A profile written the old way, as the previous release would have.
 	p := &Profile{Name: "students"}
 	if _, err := s.CreateProfile(ctx, p, []ProfileQuota{{Budget: 0.15, Period: "24h"}}); err != nil {
 		t.Fatal(err)
@@ -101,5 +99,28 @@ func TestUpdateProfileClearsQuotas(t *testing.T) {
 	got, _ := s.GetProfile(ctx, p.ID)
 	if len(got.Quotas) != 0 {
 		t.Errorf("got %d windows, want none", len(got.Quotas))
+	}
+}
+
+// Deleting a profile must take its windows with it, or orphaned rows
+// accumulate and a reused id would inherit someone else's quota.
+func TestDeletingProfileRemovesItsQuotas(t *testing.T) {
+	s := migratedStore(t, "sm2")
+	ctx := context.Background()
+
+	p := &Profile{Name: "temp"}
+	if _, err := s.CreateProfile(ctx, p, []ProfileQuota{{Budget: 0.0001, Period: "1h"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteProfile(ctx, p.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	var n int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM profile_quotas WHERE profile_id = ?`, p.ID).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Errorf("%d quota rows orphaned after deleting the profile", n)
 	}
 }

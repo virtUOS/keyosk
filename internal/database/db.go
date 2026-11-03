@@ -33,61 +33,63 @@ func newMigrator(db *bun.DB, ms *migrate.Migrations) *migrate.Migrator {
 	return migrate.NewMigrator(db, ms, migrate.WithMarkAppliedOnSuccess(true))
 }
 
+// RunMigrations brings the schema up to date. A database last used by 0.9.0
+// gets the baseline recorded in place of the migrations it replaced first; one
+// left by an earlier release is refused.
 func (s *Store) RunMigrations(ctx context.Context) error {
 	migrator := newMigrator(s.db, migrations.Migrations)
 	if err := migrator.Init(ctx); err != nil {
 		return fmt.Errorf("init migrator: %w", err)
 	}
+	if err := s.takeOverReleasedMigrations(ctx); err != nil {
+		return err
+	}
 	group, err := migrator.Migrate(ctx)
 	if err != nil {
 		return fmt.Errorf("run migrations: %w", err)
 	}
-	if group.IsZero() {
-		return nil
+	if !group.IsZero() {
+		fmt.Printf("migrated to %s\n", group)
 	}
-	fmt.Printf("migrated to %s\n", group)
+	return nil
+}
 
-	for _, m := range group.Migrations {
-		if m.Name == migrations.KeyRefName {
-			s.scrubFreePages(ctx)
-			break
+// takeOverReleasedMigrations records the baseline in place of the migrations
+// it replaced, on a database that has all of them and so has the schema the
+// baseline builds. It does both in one transaction, so a crash leaves either
+// the old records or the new one.
+//
+// A database with only some of them was last used by a release before 0.9.0,
+// and the migrations that would bring it to 0.9.0's schema are gone. It is
+// refused and left as it is, so that 0.9.0 can still upgrade it.
+func (s *Store) takeOverReleasedMigrations(ctx context.Context) error {
+	replaced := migrations.ReplacedByBaseline
+	return s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		var applied int
+		if err := tx.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM bun_migrations WHERE name IN (?)`, bun.In(replaced)).
+			Scan(&applied); err != nil {
+			return fmt.Errorf("read applied migrations: %w", err)
 		}
-	}
-	return nil
-}
-
-// scrubFreePages rewrites the database file so that nothing a migration
-// overwrote survives in free pages, and truncates the WAL, which would hold
-// copies of the pages otherwise.
-//
-// A failure is logged, not returned: the migration is committed and will not
-// run again, and refusing to start would not bring the scrub back either.
-func (s *Store) scrubFreePages(ctx context.Context) {
-	if err := s.scrub(ctx); err != nil {
-		slog.Warn("could not scrub old plaintext keys from the database file; run VACUUM on it by hand",
-			"err", err)
-	}
-}
-
-// scrub runs VACUUM and truncates the WAL.
-//
-// A checkpoint that another connection keeps from finishing, by still reading
-// an older snapshot, is not an error to SQLite: it reports it in the first
-// column of the pragma's result row. The vacuumed pages then stay in the WAL
-// and the old ones in the file, so that counts as a failure here.
-func (s *Store) scrub(ctx context.Context) error {
-	if _, err := s.db.ExecContext(ctx, `VACUUM`); err != nil {
-		return fmt.Errorf("VACUUM: %w", err)
-	}
-	var busy, logFrames, checkpointed int
-	if err := s.db.QueryRowContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`).
-		Scan(&busy, &logFrames, &checkpointed); err != nil {
-		return fmt.Errorf("wal_checkpoint: %w", err)
-	}
-	if busy != 0 {
-		return errors.New("wal_checkpoint: another connection kept it from finishing")
-	}
-	return nil
+		switch applied {
+		case 0:
+			return nil
+		case len(replaced):
+		default:
+			return errors.New("this database was last used by a Keyosk release before 0.9.0, " +
+				"which this one cannot upgrade: upgrade to 0.9.0 and start it once, then to this release")
+		}
+		if _, err := tx.ExecContext(ctx,
+			`DELETE FROM bun_migrations WHERE name IN (?)`, bun.In(replaced)); err != nil {
+			return fmt.Errorf("remove the migrations the baseline replaced: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO bun_migrations (name, group_id) VALUES (?, 1)`, migrations.BaselineName); err != nil {
+			return fmt.Errorf("record the baseline: %w", err)
+		}
+		slog.Info("recorded the baseline in place of the migrations up to 0.9.0")
+		return nil
+	})
 }
 
 // SeedDefaultProfile makes sure a default profile exists.
