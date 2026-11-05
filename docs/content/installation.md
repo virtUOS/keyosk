@@ -137,6 +137,11 @@ docker compose up -d
 Keyosk runs any new migrations when it starts. Take a backup first: a
 migration cannot be rolled back.
 
+A database last used by a release before 0.9.0 has to pass through 0.9.0:
+start 0.9.0 on it once, then update. Later releases refuse to start on it
+and say so, and leave it as it was. Once a later release has started on a
+database, 0.9.0 no longer starts on it; to go back, restore the backup.
+
 To see which version runs, open **About Keyosk** in the account menu, or ask
 the image, which needs no configuration and no running container:
 

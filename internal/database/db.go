@@ -33,61 +33,117 @@ func newMigrator(db *bun.DB, ms *migrate.Migrations) *migrate.Migrator {
 	return migrate.NewMigrator(db, ms, migrate.WithMarkAppliedOnSuccess(true))
 }
 
+// RunMigrations brings the schema up to date. A database last used by 0.9.0
+// gets the baseline recorded in place of the migrations it replaced first; one
+// left by an earlier release is refused.
 func (s *Store) RunMigrations(ctx context.Context) error {
 	migrator := newMigrator(s.db, migrations.Migrations)
 	if err := migrator.Init(ctx); err != nil {
 		return fmt.Errorf("init migrator: %w", err)
 	}
+	if err := s.takeOverReleasedMigrations(ctx); err != nil {
+		return err
+	}
 	group, err := migrator.Migrate(ctx)
 	if err != nil {
 		return fmt.Errorf("run migrations: %w", err)
 	}
-	if group.IsZero() {
-		return nil
+	if !group.IsZero() {
+		fmt.Printf("migrated to %s\n", group)
 	}
-	fmt.Printf("migrated to %s\n", group)
+	return nil
+}
 
-	for _, m := range group.Migrations {
-		if m.Name == migrations.KeyRefName {
-			s.scrubFreePages(ctx)
-			break
+// takeOverReleasedMigrations records the baseline in place of the migrations
+// it replaced, on a database that has all of them and so has the schema the
+// baseline builds. It does both in one transaction, so a crash leaves either
+// the old records or the new one.
+//
+// A database with only some of them was last used by a release before 0.9.0,
+// and the migrations that would bring it to 0.9.0's schema are gone. It is
+// refused and left as it is, so that 0.9.0 can still upgrade it.
+//
+// A database with the baseline recorded and some of them too was started
+// with 0.9.0 again after the takeover. That recorded the migrations 0.9.0
+// could run on this schema, which change nothing on it, and failed on the
+// first that adds a column. Those records are removed, and the start goes on.
+//
+// The records are read outside a transaction first. A transaction starts
+// with BEGIN IMMEDIATE, and nearly every start finds nothing to do, which
+// must not wait for a write an admin command is making. They are read again
+// inside the transaction before anything is changed.
+func (s *Store) takeOverReleasedMigrations(ctx context.Context) error {
+	found, err := readReleasedRecords(ctx, s.db)
+	if err != nil {
+		return err
+	}
+	if write, err := found.needsWrite(); !write {
+		return err
+	}
+	return s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		found, err := readReleasedRecords(ctx, tx)
+		if err != nil {
+			return err
+		}
+		if write, err := found.needsWrite(); !write {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx,
+			`DELETE FROM bun_migrations WHERE name IN (?)`, bun.In(migrations.ReplacedByBaseline)); err != nil {
+			return fmt.Errorf("remove the migrations the baseline replaced: %w", err)
+		}
+		if found.baseline {
+			slog.Warn("removed the migration records a 0.9.0 start left after this release had taken the database over")
+			return nil
+		}
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO bun_migrations (name, group_id) VALUES (?, 1)`, migrations.BaselineName); err != nil {
+			return fmt.Errorf("record the baseline: %w", err)
+		}
+		slog.Info("recorded the baseline in place of the migrations up to 0.9.0")
+		return nil
+	})
+}
+
+// releasedRecords is what bun_migrations holds of the migrations up to 0.9.0
+// and of the baseline that replaced them.
+type releasedRecords struct {
+	// baseline is whether the baseline is recorded.
+	baseline bool
+	// replaced is how many of the replaced migrations are recorded, counted
+	// by name: bun's table does not make the name unique.
+	replaced int
+}
+
+func readReleasedRecords(ctx context.Context, db bun.IDB) (releasedRecords, error) {
+	names := append(slices.Clone(migrations.ReplacedByBaseline), migrations.BaselineName)
+	var recorded []string
+	if err := db.NewRaw(`SELECT DISTINCT name FROM bun_migrations WHERE name IN (?)`, bun.In(names)).
+		Scan(ctx, &recorded); err != nil {
+		return releasedRecords{}, fmt.Errorf("read applied migrations: %w", err)
+	}
+	var r releasedRecords
+	for _, name := range recorded {
+		if name == migrations.BaselineName {
+			r.baseline = true
+		} else {
+			r.replaced++
 		}
 	}
-	return nil
+	return r, nil
 }
 
-// scrubFreePages rewrites the database file so that nothing a migration
-// overwrote survives in free pages, and truncates the WAL, which would hold
-// copies of the pages otherwise.
-//
-// A failure is logged, not returned: the migration is committed and will not
-// run again, and refusing to start would not bring the scrub back either.
-func (s *Store) scrubFreePages(ctx context.Context) {
-	if err := s.scrub(ctx); err != nil {
-		slog.Warn("could not scrub old plaintext keys from the database file; run VACUUM on it by hand",
-			"err", err)
+// needsWrite says whether the records call for changing bun_migrations, or
+// for refusing the database.
+func (r releasedRecords) needsWrite() (bool, error) {
+	switch {
+	case r.replaced == 0:
+		return false, nil
+	case !r.baseline && r.replaced < len(migrations.ReplacedByBaseline):
+		return false, errors.New("this database was last used by a Keyosk release before 0.9.0, " +
+			"which this one cannot upgrade: upgrade to 0.9.0 and start it once, then to this release")
 	}
-}
-
-// scrub runs VACUUM and truncates the WAL.
-//
-// A checkpoint that another connection keeps from finishing, by still reading
-// an older snapshot, is not an error to SQLite: it reports it in the first
-// column of the pragma's result row. The vacuumed pages then stay in the WAL
-// and the old ones in the file, so that counts as a failure here.
-func (s *Store) scrub(ctx context.Context) error {
-	if _, err := s.db.ExecContext(ctx, `VACUUM`); err != nil {
-		return fmt.Errorf("VACUUM: %w", err)
-	}
-	var busy, logFrames, checkpointed int
-	if err := s.db.QueryRowContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`).
-		Scan(&busy, &logFrames, &checkpointed); err != nil {
-		return fmt.Errorf("wal_checkpoint: %w", err)
-	}
-	if busy != 0 {
-		return errors.New("wal_checkpoint: another connection kept it from finishing")
-	}
-	return nil
+	return true, nil
 }
 
 // SeedDefaultProfile makes sure a default profile exists.

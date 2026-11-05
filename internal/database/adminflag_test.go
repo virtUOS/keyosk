@@ -2,6 +2,8 @@ package database
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -222,5 +224,15 @@ func TestListAndCountAdmins(t *testing.T) {
 	}
 	if n, _ = s.CountAdmins(ctx); n != 2 {
 		t.Errorf("CountAdmins = %d, want 2", n)
+	}
+}
+
+// Promoting an id that names no account must fail, so a stale form cannot
+// report a promotion that did not happen.
+func TestSetUserAdminRefusesAMissingAccount(t *testing.T) {
+	s := migratedStore(t, "adminmig3")
+	err := s.SetUserAdmin(context.Background(), 404, true)
+	if !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("err = %v, want sql.ErrNoRows", err)
 	}
 }
