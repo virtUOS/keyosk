@@ -97,7 +97,7 @@ one container with a SQLite database.
   { "concepts/usage-limits.md" = "Spend quotas per period, how LiteLLM enforces them (422 vs 429), and what the usage dashboard shows" },
   { "concepts/expiration.md" = "How extending a key works and when expiry warnings go out by dashboard and email" },
   { "concepts/profiles.md" = "Profile fields, assigning profiles with deadlines, how changes reach existing keys, and keys deleted in the gateway" },
-  { "concepts/gateway.md" = "How Keyosk names users and keys in LiteLLM, and running several Keyosk instances on one gateway" },
+  { "concepts/gateway.md" = "How Keyosk names users and keys in LiteLLM, running several Keyosk instances on one gateway, and which example request the dashboard shows for a model" },
 ]
 "Optional" = [
   { "development.md" = "Working on Keyosk itself: the dev stack and the tests" },

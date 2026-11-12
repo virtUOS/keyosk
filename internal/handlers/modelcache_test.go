@@ -50,26 +50,26 @@ func (l *slowLister) ListModels(ctx context.Context) ([]string, error) {
 	return l.Fake.ListModels(ctx)
 }
 
-// The embedding list, read on every dashboard load, must not wait behind a
+// The model kinds, read on every dashboard load, must not wait behind a
 // model list read that hangs: the two are read outside the shared lock.
-func TestModelCacheServesEmbeddingsWhileAModelReadHangs(t *testing.T) {
+func TestModelCacheServesKindsWhileAModelReadHangs(t *testing.T) {
 	fake := keyprovider.NewFake()
 	fake.AvailableModels = []string{"a"}
-	fake.EmbeddingByModel = map[string]bool{"e": true}
+	fake.KindByModel = map[string]string{"e": keyprovider.KindEmbedding}
 	l := newSlowLister(t, fake)
 	l.slow = true
 	c := newModelCache(l)
 	ctx := context.Background()
 
-	if emb := c.Embeddings(ctx); !emb["e"] {
-		t.Fatalf("embeddings = %v, want them read", emb)
+	if kinds := c.Kinds(ctx); kinds["e"] != keyprovider.KindEmbedding {
+		t.Fatalf("kinds = %v, want them read", kinds)
 	}
 	go c.Models(ctx)
 	waitFor(t, func() bool { return l.waiting.Load() == 1 })
 
-	emb := returnsWithin(t, time.Second, func() map[string]bool { return c.Embeddings(ctx) })
-	if !emb["e"] {
-		t.Errorf("embeddings = %v, want the cached list", emb)
+	kinds := returnsWithin(t, time.Second, func() map[string]string { return c.Kinds(ctx) })
+	if kinds["e"] != keyprovider.KindEmbedding {
+		t.Errorf("kinds = %v, want the cached list", kinds)
 	}
 }
 

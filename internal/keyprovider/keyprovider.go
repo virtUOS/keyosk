@@ -80,12 +80,28 @@ type ModelLister interface {
 	ListModels(ctx context.Context) ([]string, error)
 }
 
-// EmbeddingLister is implemented by providers that can say which of their
-// models are embedding models, so the dashboard's example request shows the
-// right endpoint and body for each. Separate from ModelLister because a
-// gateway may be able to list models without classifying them.
-type EmbeddingLister interface {
-	EmbeddingModels(ctx context.Context) (map[string]bool, error)
+// The kinds of model that need an example request of their own on the
+// dashboard, as a ModelKindLister reports them. A model that is none of these
+// is a chat model.
+const (
+	// KindEmbedding takes /embeddings and an "input" body.
+	KindEmbedding = "embedding"
+	// KindRerank takes /rerank, a query and the documents to rank.
+	KindRerank = "rerank"
+	// KindImage generates images, through /images/generations and a prompt.
+	KindImage = "image"
+	// KindVision is a chat model that reads images, shown with a page image
+	// rather than a line of text.
+	KindVision = "vision"
+)
+
+// ModelKindLister is implemented by providers that can say what kind of model
+// each of theirs is, so the dashboard's example request shows the right
+// endpoint and body for each. ModelKinds maps a model to its kind and leaves
+// chat models out. Separate from ModelLister because a gateway may be able to
+// list models without classifying them.
+type ModelKindLister interface {
+	ModelKinds(ctx context.Context) (map[string]string, error)
 }
 
 // QuotaWindow is one allowance and the period it resets on. Budget is spend,
