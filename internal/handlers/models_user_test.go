@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"html/template"
+	"maps"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -219,32 +221,50 @@ func TestCurlExampleDoesNotEmbedTheKey(t *testing.T) {
 }
 
 // The example request has to match the model: an embedding model takes
-// /embeddings with an "input" body, and pasting the chat example against one
-// simply fails. The page carries the classification so its script can pick.
-func TestDashboardMarksEmbeddingModels(t *testing.T) {
+// /embeddings with an "input" body, a reranker /rerank with documents, an
+// image generator /images/generations with a prompt, and pasting the chat
+// example against any of them simply fails. A model that reads images gets a
+// chat example that sends a page. The page carries each model's kind so its
+// script can pick.
+func TestDashboardMarksModelKinds(t *testing.T) {
+	kinds := map[string]string{
+		"bge-m3":                    keyprovider.KindEmbedding,
+		"BAAI/bge-reranker-v2-m3":   keyprovider.KindRerank,
+		"gpt-image-1":               keyprovider.KindImage,
+		"lightonai/LightOnOCR-3-4B": keyprovider.KindVision,
+	}
 	d := dashboardData{
-		Lang:            i18n.DE,
-		User:            &database.User{Name: "T", Email: "t@example.com"},
-		APIKey:          &database.APIKey{KeyPrefix: "sk-abc", ExpiresAt: time.Now().Add(24 * time.Hour)},
-		APIBaseURL:      "https://gw.example.com/v1",
-		CSRFToken:       "TOK",
-		Models:          []string{"gpt-4o", "bge-m3"},
-		EmbeddingModels: map[string]bool{"bge-m3": true},
+		Lang:       i18n.DE,
+		User:       &database.User{Name: "T", Email: "t@example.com"},
+		APIKey:     &database.APIKey{KeyPrefix: "sk-abc", ExpiresAt: time.Now().Add(24 * time.Hour)},
+		APIBaseURL: "https://gw.example.com/v1",
+		CSRFToken:  "TOK",
+		Models:     append([]string{"gpt-4o"}, slices.Sorted(maps.Keys(kinds))...),
+		ModelKinds: kinds,
 	}
 	var buf bytes.Buffer
 	if err := parseDashboardTemplate().Execute(&buf, d); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
-	marked, _ := pageData(t, buf.String())["embeddingModels"].(map[string]any)
-	if marked["bge-m3"] != true {
-		t.Error("embedding model not marked; its curl example would use /chat/completions")
+	marked, _ := pageData(t, buf.String())["modelKinds"].(map[string]any)
+	for model, kind := range kinds {
+		if marked[model] != kind {
+			t.Errorf("%s marked %v, want %q; its example would be the chat one", model, marked[model], kind)
+		}
 	}
-	if marked["gpt-4o"] == true {
-		t.Error("chat model marked as an embedding model")
+	if _, ok := marked["gpt-4o"]; ok {
+		t.Errorf("chat model marked as %v", marked["gpt-4o"])
 	}
-	// The script must offer both endpoints, or the distinction cannot be drawn.
-	for _, want := range []string{"/embeddings", "/chat/completions"} {
-		if !strings.Contains(staticJS(t, "dashboard.js"), want) {
+	// The script must know every kind the server sends and offer every
+	// endpoint, or the distinction cannot be drawn.
+	js := staticJS(t, "dashboard.js")
+	for _, kind := range []string{keyprovider.KindEmbedding, keyprovider.KindRerank, keyprovider.KindImage, keyprovider.KindVision} {
+		if !strings.Contains(js, `case "`+kind+`":`) {
+			t.Errorf("script has no example for kind %q", kind)
+		}
+	}
+	for _, want := range []string{"/embeddings", "/rerank", "/images/generations", "/chat/completions"} {
+		if !strings.Contains(js, want) {
 			t.Errorf("script does not mention %q", want)
 		}
 	}
@@ -252,7 +272,7 @@ func TestDashboardMarksEmbeddingModels(t *testing.T) {
 
 // A gateway that cannot classify its models leaves the map nil. The page must
 // still render: every model then gets the chat example, as before.
-func TestDashboardRendersWithoutEmbeddingInfo(t *testing.T) {
+func TestDashboardRendersWithoutModelKinds(t *testing.T) {
 	d := dashboardData{
 		Lang:       i18n.DE,
 		User:       &database.User{Name: "T", Email: "t@example.com"},
@@ -263,10 +283,10 @@ func TestDashboardRendersWithoutEmbeddingInfo(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	if err := parseDashboardTemplate().Execute(&buf, d); err != nil {
-		t.Fatalf("nil embedding map broke rendering: %v", err)
+		t.Fatalf("nil kind map broke rendering: %v", err)
 	}
-	if _, ok := pageData(t, buf.String())["embeddingModels"]; !ok {
-		t.Error("embeddingModels missing; the script would throw on a click")
+	if _, ok := pageData(t, buf.String())["modelKinds"]; !ok {
+		t.Error("modelKinds missing; the script would throw on a click")
 	}
 }
 

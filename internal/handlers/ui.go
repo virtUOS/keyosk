@@ -113,11 +113,12 @@ type dashboardData struct {
 	// bills in credits rather than dollars reads correctly.
 	BudgetUnit string
 	Models     []string
-	// EmbeddingModels are the ones among Models that take /embeddings and an
-	// "input" body rather than /chat/completions and "messages".
-	EmbeddingModels map[string]bool
-	Usage           usageReport
-	CSRFToken       string
+	// ModelKinds are the ones among Models whose example request is not a
+	// chat completion, each with its kind (keyprovider.KindEmbedding and so
+	// on). A chat model is not in it.
+	ModelKinds map[string]string
+	Usage      usageReport
+	CSRFToken  string
 	// SuccessorURL, when set, puts a banner on the page pointing users to
 	// the portal that replaces this one, and hides the key issuing buttons.
 	SuccessorURL string
@@ -214,13 +215,13 @@ func (u *UI) Dashboard(w http.ResponseWriter, r *http.Request) {
 	gctx, cancel := context.WithTimeout(r.Context(), u.upstreamTimeout)
 	defer cancel()
 	var (
-		models     []string
-		embeddings map[string]bool
-		lists      sync.WaitGroup
+		models []string
+		kinds  map[string]string
+		lists  sync.WaitGroup
 	)
 	lists.Go(func() {
-		_ = safely("list embedding models", func() error {
-			embeddings = u.models.Embeddings(gctx)
+		_ = safely("list model kinds", func() error {
+			kinds = u.models.Kinds(gctx)
 			return nil
 		})
 	})
@@ -264,31 +265,31 @@ func (u *UI) Dashboard(w http.ResponseWriter, r *http.Request) {
 	lists.Wait()
 
 	if err := u.tmpl.Execute(w, dashboardData{
-		User:            su.User,
-		APIKey:          apiKey,
-		NewKey:          newKey,
-		IsAdmin:         isAdmin,
-		APIBaseURL:      strings.TrimRight(u.cfg.LiteLLMBaseURL, "/") + "/v1",
-		ExtendUntil:     extendUntil,
-		ExpiresInDays:   daysUntilExpiry(apiKey),
-		ExpiryUrgent:    isExpiryUrgent(apiKey) && !keyMissing,
-		ProfileName:     profileName(profile),
-		ProfileNotice:   profileNotice,
-		Quotas:          profileQuotaLines(profile, lang, u.cfg.BudgetUnit),
-		BudgetUnit:      u.cfg.BudgetUnit,
-		SuccessorURL:    u.cfg.SuccessorURL,
-		PrivacyNotice:   hasPrivacyNotice(u.cfg),
-		Models:          models,
-		EmbeddingModels: embeddings,
-		Usage:           usage,
-		CSRFToken:       u.csrf.Token(w, r),
-		Lang:            lang,
-		Theme:           ThemeFromRequest(r),
-		Path:            r.URL.Path,
-		TitleKey:        "app.title",
-		ProfileError:    profileErr,
-		KeyError:        keyErr,
-		KeyMissing:      keyMissing,
+		User:          su.User,
+		APIKey:        apiKey,
+		NewKey:        newKey,
+		IsAdmin:       isAdmin,
+		APIBaseURL:    strings.TrimRight(u.cfg.LiteLLMBaseURL, "/") + "/v1",
+		ExtendUntil:   extendUntil,
+		ExpiresInDays: daysUntilExpiry(apiKey),
+		ExpiryUrgent:  isExpiryUrgent(apiKey) && !keyMissing,
+		ProfileName:   profileName(profile),
+		ProfileNotice: profileNotice,
+		Quotas:        profileQuotaLines(profile, lang, u.cfg.BudgetUnit),
+		BudgetUnit:    u.cfg.BudgetUnit,
+		SuccessorURL:  u.cfg.SuccessorURL,
+		PrivacyNotice: hasPrivacyNotice(u.cfg),
+		Models:        models,
+		ModelKinds:    kinds,
+		Usage:         usage,
+		CSRFToken:     u.csrf.Token(w, r),
+		Lang:          lang,
+		Theme:         ThemeFromRequest(r),
+		Path:          r.URL.Path,
+		TitleKey:      "app.title",
+		ProfileError:  profileErr,
+		KeyError:      keyErr,
+		KeyMissing:    keyMissing,
 	}); err != nil {
 		slog.Error("dashboard template", "err", err)
 	}

@@ -91,31 +91,32 @@ func (c *cached[T]) get(ctx context.Context, what string, fetch func(context.Con
 // unrelated field should not lose the model checkboxes because the gateway
 // blipped.
 type modelCache struct {
-	lister   keyprovider.ModelLister
-	embedder keyprovider.EmbeddingLister
+	lister keyprovider.ModelLister
+	kinder keyprovider.ModelKindLister
 
-	models     cached[[]string]
-	embeddings cached[map[string]bool]
+	models cached[[]string]
+	kinds  cached[map[string]string]
 }
 
 func newModelCache(l keyprovider.ModelLister) *modelCache {
-	e, _ := l.(keyprovider.EmbeddingLister)
-	return &modelCache{lister: l, embedder: e,
-		models:     cached[[]string]{ttl: modelCacheTTL, timeout: modelRefreshTimeout},
-		embeddings: cached[map[string]bool]{ttl: modelCacheTTL, timeout: modelRefreshTimeout}}
+	k, _ := l.(keyprovider.ModelKindLister)
+	return &modelCache{lister: l, kinder: k,
+		models: cached[[]string]{ttl: modelCacheTTL, timeout: modelRefreshTimeout},
+		kinds:  cached[map[string]string]{ttl: modelCacheTTL, timeout: modelRefreshTimeout}}
 }
 
-// Embeddings reports which models the gateway serves as embedding models, so
-// the dashboard can show the right example request for each.
+// Kinds reports which models the gateway serves are not chat models, and what
+// they are instead, so the dashboard can show the right example request for
+// each.
 //
 // A failed lookup returns nil rather than an error: every model then gets the
 // chat example, which is what the page did before this existed. A wrong example
 // for one model is a smaller harm than no model list at all.
-func (c *modelCache) Embeddings(ctx context.Context) map[string]bool {
-	if c.embedder == nil {
+func (c *modelCache) Kinds(ctx context.Context) map[string]string {
+	if c.kinder == nil {
 		return nil
 	}
-	return c.embeddings.get(ctx, "embedding models", c.embedder.EmbeddingModels)
+	return c.kinds.get(ctx, "model kinds", c.kinder.ModelKinds)
 }
 
 // Models returns the cached list, refreshing it when stale.

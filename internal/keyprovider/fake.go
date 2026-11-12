@@ -38,8 +38,8 @@ type Fake struct {
 	AvailableModels []string
 	ModelsErr       error
 
-	// EmbeddingByModel is what EmbeddingModels returns.
-	EmbeddingByModel map[string]bool
+	// KindByModel is what ModelKinds returns.
+	KindByModel map[string]string
 
 	// UsageByOwner and ModelUsageByOwner are the per-day and per-model halves
 	// of what History returns per owner; UsageErr forces it to fail.
@@ -82,7 +82,7 @@ func NewFake() *Fake {
 var (
 	_ Provider        = (*Fake)(nil)
 	_ ModelLister     = (*Fake)(nil)
-	_ EmbeddingLister = (*Fake)(nil)
+	_ ModelKindLister = (*Fake)(nil)
 	_ UsageReporter   = (*Fake)(nil)
 )
 
@@ -144,12 +144,12 @@ func (f *Fake) ListModels(context.Context) ([]string, error) {
 	return f.AvailableModels, nil
 }
 
-// EmbeddingModels is which of AvailableModels are embedding models.
-func (f *Fake) EmbeddingModels(context.Context) (map[string]bool, error) {
+// ModelKinds is the kind of each of AvailableModels that is not a chat model.
+func (f *Fake) ModelKinds(context.Context) (map[string]string, error) {
 	if f.ModelsErr != nil {
 		return nil, f.ModelsErr
 	}
-	return f.EmbeddingByModel, nil
+	return f.KindByModel, nil
 }
 
 func (f *Fake) CreateKey(ctx context.Context, req KeyRequest) (KeyResult, error) {

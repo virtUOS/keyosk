@@ -175,18 +175,44 @@ func TestE2EModels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"mock-embed", "mock-large", "mock-small"} {
-		if !slices.Contains(models, want) {
-			t.Errorf("models = %v, missing %s", models, want)
+	// The dev stack has a model of every kind the dashboard has an example
+	// for; "" is a chat model. A gateway that lacks one most likely started
+	// before it was added to dev/litellm-config.yaml, and its container needs
+	// recreating.
+	mocks := map[string]string{
+		"mock-small":  "",
+		"mock-large":  "",
+		"mock-embed":  keyprovider.KindEmbedding,
+		"mock-rerank": keyprovider.KindRerank,
+		"mock-image":  keyprovider.KindImage,
+		"mock-vision": keyprovider.KindVision,
+	}
+	for m := range mocks {
+		if !slices.Contains(models, m) {
+			t.Errorf("models = %v, missing %s", models, m)
 		}
 	}
 
-	embedding, err := g.EmbeddingModels(ctx)
+	kinds, err := g.ModelKinds(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !embedding["mock-embed"] || embedding["mock-small"] || embedding["mock-large"] {
-		t.Errorf("embedding models = %v, want mock-embed only", embedding)
+	for m, want := range mocks {
+		if kinds[m] != want {
+			t.Errorf("kind of %s = %q, want %q", m, kinds[m], want)
+		}
+	}
+
+	// The mocks are priced per token, per query and per image. The gateway
+	// has to hand each price back for the startup check to see it.
+	pricing, err := g.client.Pricing(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range pricing.Unpriced {
+		if _, ok := mocks[m]; ok {
+			t.Errorf("%s reported unpriced", m)
+		}
 	}
 }
 

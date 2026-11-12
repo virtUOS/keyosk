@@ -145,11 +145,14 @@ with a canned text, which still goes through LiteLLM's key checks, budgets and
 spend logging — so a key generated in Keyosk can be used for real, and the
 dashboard shows the usage:
 
-| Model        | Kind      | Cost of a short request |
-| ------------ | --------- | ----------------------- |
-| `mock-small` | chat      | about 0.05              |
-| `mock-large` | chat      | about 0.50              |
-| `mock-embed` | embedding | listed only             |
+| Model         | Kind                   | Cost of a short request |
+| ------------- | ---------------------- | ----------------------- |
+| `mock-small`  | chat                   | about 0.05              |
+| `mock-large`  | chat                   | about 0.50              |
+| `mock-embed`  | embedding              | listed only             |
+| `mock-rerank` | rerank                 | listed only             |
+| `mock-image`  | image generation       | listed only             |
+| `mock-vision` | chat that reads images | listed only             |
 
 ```bash
 curl http://localhost:4000/chat/completions \
@@ -157,6 +160,10 @@ curl http://localhost:4000/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model": "mock-small", "max_tokens": 20, "messages": [{"role": "user", "content": "hi"}]}'
 ```
+
+The listed-only models answer no request. They are there so the dashboard
+shows its example for each kind of model, which it reads from the gateway's
+`model_info`.
 
 Usage reaches the dashboard a few seconds late: LiteLLM writes its spend log
 in batches. The dashboard reads it afresh on every load.
@@ -170,6 +177,11 @@ refused for a moment.
 LiteLLM checks for budgets to reset every few seconds here rather than every
 ten minutes, so a profile with a short window, such as `1h`, visibly resets
 during a session.
+
+LiteLLM reads `litellm-config.yaml` when it starts. After it changes, recreate
+the container with
+`docker compose -f dev/docker-compose.yml up -d --force-recreate litellm`,
+for the same reason as the OIDC mock's users file above.
 
 ## Mail
 
