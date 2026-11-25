@@ -3,10 +3,11 @@
 const DATA = JSON.parse(document.getElementById('page-data').textContent);
 const COPIED = DATA.copied;
 const BASE_URL = DATA.baseURL;
-// Which models take /embeddings instead of /chat/completions, as reported by
-// the gateway. Empty when it cannot say, in which case every model gets the
-// chat example — the behaviour before this was threaded through.
-const EMBEDDING_MODELS = DATA.embeddingModels || {};
+// What each model is when it is not a chat model, as reported by the
+// gateway: "embedding", "rerank", "image" or "vision" (keyprovider.Kind* on
+// the server). A model missing here gets the chat example, and every model
+// does when the gateway cannot say.
+const MODEL_KINDS = DATA.modelKinds || {};
 
 // The token in ?k= that brought a new key here is spent once the page has
 // rendered. Drop it from the address bar so a reload or a copied link does not
@@ -108,62 +109,178 @@ function copyCurl(btn) {
   if (btn) btn.addEventListener('click', () => copyCurl(btn));
 }
 
+// What the examples ask for. None has an ASCII apostrophe: the curl examples
+// send their body in single quotes, which one would end.
+const RERANK_QUERY = "How do I reset my password?";
+const RERANK_DOCUMENTS = [
+  "To reset your password, open the account settings.",
+  "The library opens at 8 a.m.",
+  "Passwords must be at least 12 characters long.",
+];
+const IMAGE_PROMPT = "A watercolor of Osnabrück’s Rathaus at dusk";
+const PAGE_PROMPT = "Transcribe this page as Markdown.";
+
 // The key is referenced as $LLM_API_KEY rather than pasted in: the page only
 // ever shows a prefix once the key has been issued, and a command carrying a
 // live secret would end up in the user's shell history. It is not called
 // OPENAI_API_KEY: the gateway serves models from any vendor, and many people
 // already keep a real OpenAI key under that name.
-// An embedding model takes a different endpoint and a different body than a
-// chat model, so the same example cannot serve both: pasting the chat one
-// against bge-m3 just fails. Which is which comes from the gateway rather than
-// the name — see EMBEDDING_MODELS.
-// The chat example sets max_tokens. LiteLLM reserves a request's worst-case
+// The example has to match the model. An embedding model, a reranker and an
+// image generator each take an endpoint and a body of their own, so the same
+// example cannot serve them all: pasting the chat one against bge-m3 just
+// fails. A model that reads images takes the chat endpoint, but its example
+// sends it a page to read, since that is what such a model is there for.
+// Which is which comes from the gateway rather than the name — see
+// MODEL_KINDS.
+// The chat examples set max_tokens. LiteLLM reserves a request's worst-case
 // cost against the budget until the answer is settled, and without max_tokens
 // that is the model's whole output limit: on a small budget, the next request
 // is refused with "Budget has been exceeded" although little was spent. People
 // copy the example as it is, so it should be the request that avoids this.
+// The page example allows more than the chat one: a page of text runs longer
+// than an answer to "Hello!".
 function curlExample(model) {
-  const embedding = EMBEDDING_MODELS[model] === true;
-  const path = embedding ? "/embeddings" : "/chat/completions";
-  const body = embedding
-    ? "    \"input\": \"Your text to embed\"\n"
-    : "    \"max_tokens\": 1000,\n" +
-      "    \"messages\": [{\"role\": \"user\", \"content\": \"Hello!\"}]\n";
+  switch (MODEL_KINDS[model]) {
+    case "embedding":
+      return curlPost("/embeddings", model,
+        "    \"input\": \"Your text to embed\"\n");
+    case "rerank":
+      return curlPost("/rerank", model,
+        "    \"query\": \"" + RERANK_QUERY + "\",\n" +
+        "    \"documents\": [\n" +
+        RERANK_DOCUMENTS.map(d => "      \"" + d + "\"").join(",\n") + "\n" +
+        "    ],\n" +
+        "    \"top_n\": 2\n");
+    // The answer carries the image as base64 in JSON, which jq takes out.
+    // base64 --decode is spelled the same in GNU and BSD base64.
+    case "image":
+      return "# Needs jq: https://jqlang.org\n" +
+        curlPost("/images/generations", model,
+          "    \"prompt\": \"" + IMAGE_PROMPT + "\",\n" +
+          "    \"size\": \"1024x1024\",\n" +
+          "    \"n\": 1,\n" +
+          "    \"response_format\": \"b64_json\"\n") + " \\\n" +
+        "  | jq -r '.data[0].b64_json' | base64 --decode > image.png";
+    // The page goes in as a data URL. A page image runs to megabytes, more
+    // than a command line may hold, so the body is read from stdin rather
+    // than passed as an argument, and the shell fills the image into it.
+    // tr drops the line breaks GNU base64 adds and BSD base64 does not.
+    case "vision":
+      return curlHead("/chat/completions") +
+        "  -d @- <<EOF\n" +
+        "{\n" +
+        "  \"model\": \"" + model + "\",\n" +
+        "  \"max_tokens\": 2000,\n" +
+        "  \"messages\": [{\"role\": \"user\", \"content\": [\n" +
+        "    {\"type\": \"image_url\", \"image_url\": {\"url\": \"data:image/png;base64,$(base64 < page.png | tr -d '\\n')\"}},\n" +
+        "    {\"type\": \"text\", \"text\": \"" + PAGE_PROMPT + "\"}\n" +
+        "  ]}]\n" +
+        "}\n" +
+        "EOF";
+    default:
+      return curlPost("/chat/completions", model,
+        "    \"max_tokens\": 1000,\n" +
+        "    \"messages\": [{\"role\": \"user\", \"content\": \"Hello!\"}]\n");
+  }
+}
+
+// The start of every curl example: the endpoint, the key and the body's type.
+function curlHead(path) {
   return "curl " + BASE_URL + path + " \\\n" +
     "  -H \"Authorization: Bearer $LLM_API_KEY\" \\\n" +
-    "  -H \"Content-Type: application/json\" \\\n" +
+    "  -H \"Content-Type: application/json\" \\\n";
+}
+
+// A curl example whose JSON body is the model and then body, given as lines
+// that each end in a newline.
+function curlPost(path, model, body) {
+  return curlHead(path) +
     "  -d '{\n" +
     "    \"model\": \"" + model + "\",\n" +
     body +
     "  }'";
 }
 
-// The same request through the OpenAI Python SDK, which is how most people
-// will script against the gateway. The key comes from the environment for the
-// same reason as above: a secret in a script ends up committed somewhere, and
-// max_tokens is there for the same reason as in the curl example.
+// The same request in Python, which is how most people will script against
+// the gateway. The key comes from the environment for the same reason as
+// above: a secret in a script ends up committed somewhere, and max_tokens is
+// there for the same reason as in the curl example.
+// Every example goes through the OpenAI SDK but the rerank one: the SDK has
+// no call for /rerank, so that is a plain HTTP request with requests.
 function pythonExample(model) {
-  const embedding = EMBEDDING_MODELS[model] === true;
-  const call = embedding
-    ? "resp = client.embeddings.create(\n" +
-      "    model=\"" + model + "\",\n" +
-      "    input=\"Your text to embed\",\n" +
-      ")\n" +
-      "print(resp.data[0].embedding[:5])"
-    : "resp = client.chat.completions.create(\n" +
-      "    model=\"" + model + "\",\n" +
-      "    max_tokens=1000,\n" +
-      "    messages=[{\"role\": \"user\", \"content\": \"Hello!\"}],\n" +
-      ")\n" +
-      "print(resp.choices[0].message.content)";
+  switch (MODEL_KINDS[model]) {
+    case "embedding":
+      return pythonClient() +
+        "resp = client.embeddings.create(\n" +
+        "    model=\"" + model + "\",\n" +
+        "    input=\"Your text to embed\",\n" +
+        ")\n" +
+        "print(resp.data[0].embedding[:5])";
+    case "rerank":
+      return "# pip install requests\n" +
+        "import os\n" +
+        "import requests\n\n" +
+        "resp = requests.post(\n" +
+        "    \"" + BASE_URL + "/rerank\",\n" +
+        "    headers={\"Authorization\": \"Bearer \" + os.environ[\"LLM_API_KEY\"]},\n" +
+        "    json={\n" +
+        "        \"model\": \"" + model + "\",\n" +
+        "        \"query\": \"" + RERANK_QUERY + "\",\n" +
+        "        \"documents\": [\n" +
+        RERANK_DOCUMENTS.map(d => "            \"" + d + "\",\n").join("") +
+        "        ],\n" +
+        "        \"top_n\": 2,\n" +
+        "    },\n" +
+        ")\n" +
+        "resp.raise_for_status()\n" +
+        "for result in resp.json()[\"results\"]:\n" +
+        "    print(result[\"index\"], result[\"relevance_score\"])";
+    case "image":
+      return pythonClient("import base64\n") +
+        "resp = client.images.generate(\n" +
+        "    model=\"" + model + "\",\n" +
+        "    prompt=\"" + IMAGE_PROMPT + "\",\n" +
+        "    size=\"1024x1024\",\n" +
+        "    n=1,\n" +
+        "    response_format=\"b64_json\",\n" +
+        ")\n" +
+        "with open(\"image.png\", \"wb\") as f:\n" +
+        "    f.write(base64.b64decode(resp.data[0].b64_json))";
+    case "vision":
+      return pythonClient("import base64\n") +
+        "with open(\"page.png\", \"rb\") as f:\n" +
+        "    page = base64.b64encode(f.read()).decode()\n\n" +
+        "resp = client.chat.completions.create(\n" +
+        "    model=\"" + model + "\",\n" +
+        "    max_tokens=2000,\n" +
+        "    messages=[{\"role\": \"user\", \"content\": [\n" +
+        "        {\"type\": \"image_url\", \"image_url\": {\"url\": \"data:image/png;base64,\" + page}},\n" +
+        "        {\"type\": \"text\", \"text\": \"" + PAGE_PROMPT + "\"},\n" +
+        "    ]}],\n" +
+        ")\n" +
+        "print(resp.choices[0].message.content)";
+    default:
+      return pythonClient() +
+        "resp = client.chat.completions.create(\n" +
+        "    model=\"" + model + "\",\n" +
+        "    max_tokens=1000,\n" +
+        "    messages=[{\"role\": \"user\", \"content\": \"Hello!\"}],\n" +
+        ")\n" +
+        "print(resp.choices[0].message.content)";
+  }
+}
+
+// The OpenAI client the Python examples start with, after the imports an
+// example needs besides it.
+function pythonClient(imports = "") {
   return "# pip install openai\n" +
+    imports +
     "import os\n" +
     "from openai import OpenAI\n\n" +
     "client = OpenAI(\n" +
     "    base_url=\"" + BASE_URL + "\",\n" +
     "    api_key=os.environ[\"LLM_API_KEY\"],\n" +
-    ")\n\n" +
-    call;
+    ")\n\n";
 }
 
 // Clicking a model copies its bare name: that is what goes into an SDK call, a

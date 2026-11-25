@@ -12,6 +12,7 @@ import (
 
 	"github.com/virtuos/keyosk/internal/database"
 	"github.com/virtuos/keyosk/internal/i18n"
+	"github.com/virtuos/keyosk/internal/keyprovider"
 	"github.com/virtuos/keyosk/web"
 )
 
@@ -46,31 +47,31 @@ func pageData(t *testing.T, page string) map[string]any {
 
 // The map reaches the script through the page data. A nil map arrives as
 // null, and the script must still get something a property lookup works on:
-// `null[model]` throws and would break every curl example on the page, not
-// just an embedding one.
-func TestEmbeddingMapRendersAsUsableJS(t *testing.T) {
-	render := func(m map[string]bool) any {
+// `null[model]` throws and would break every example on the page, not just
+// the one for an embedding model.
+func TestModelKindsRenderAsUsableJS(t *testing.T) {
+	render := func(m map[string]string) any {
 		d := dashboardData{
 			Lang: i18n.EN, User: &database.User{Name: "T", Email: "t@e.com"},
 			APIKey:     &database.APIKey{KeyPrefix: "sk", ExpiresAt: time.Now().Add(time.Hour)},
 			APIBaseURL: "https://gw/v1", CSRFToken: "T",
-			Models: []string{"m"}, EmbeddingModels: m,
+			Models: []string{"m"}, ModelKinds: m,
 		}
 		var b bytes.Buffer
 		if err := parseDashboardTemplate().Execute(&b, d); err != nil {
 			t.Fatal(err)
 		}
-		return pageData(t, b.String())["embeddingModels"]
+		return pageData(t, b.String())["modelKinds"]
 	}
 
 	if got := render(nil); got != nil {
 		t.Errorf("nil map rendered as %v, want null", got)
 	}
-	if !strings.Contains(staticJS(t, "dashboard.js"), "DATA.embeddingModels || {}") {
+	if !strings.Contains(staticJS(t, "dashboard.js"), "DATA.modelKinds || {}") {
 		t.Error("the script does not guard against a null map; a lookup on null throws")
 	}
-	got, _ := render(map[string]bool{"bge-m3": true}).(map[string]any)
-	if got["bge-m3"] != true {
+	got, _ := render(map[string]string{"bge-m3": keyprovider.KindEmbedding}).(map[string]any)
+	if got["bge-m3"] != keyprovider.KindEmbedding {
 		t.Errorf("populated map rendered as %v", got)
 	}
 }

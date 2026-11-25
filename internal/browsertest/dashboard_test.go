@@ -233,6 +233,57 @@ func TestModelChipCopiesName(t *testing.T) {
 	check(t, expect.Locator(chip).ToHaveText("mock-large"))
 }
 
+// Each kind of model gets an example of its own: the chat one would fail
+// against an embedding model, a reranker or an image generator, and a model
+// that reads images is shown reading a page. The kinds come from the dev
+// gateway's mock models.
+//
+// Not parallel: a chip copies its name, and the browser's contexts share one
+// clipboard.
+func TestExampleMatchesModelKind(t *testing.T) {
+	page := loggedIn(t, "student", pageOptions{clipboard: true})
+	code := page.Locator("#curl-code")
+	cases := []struct {
+		model             string
+		curl, python, not []string
+	}{
+		{model: "mock-small",
+			curl:   []string{"/chat/completions", `"max_tokens": 1000`, `"content": "Hello!"`},
+			python: []string{"client.chat.completions.create("}},
+		{model: "mock-embed",
+			curl:   []string{"/embeddings", `"input": "Your text to embed"`},
+			python: []string{"client.embeddings.create("}},
+		{model: "mock-rerank",
+			curl:   []string{"/rerank", `"documents": [`, `"top_n": 2`},
+			python: []string{"import requests", `print(result["index"], result["relevance_score"])`},
+			// The OpenAI SDK has no rerank call.
+			not: []string{"from openai import OpenAI"}},
+		{model: "mock-image",
+			curl:   []string{"/images/generations", `"response_format": "b64_json"`, "| base64 --decode > image.png"},
+			python: []string{"client.images.generate(", "base64.b64decode(resp.data[0].b64_json)"}},
+		{model: "mock-vision",
+			curl:   []string{"/chat/completions", "-d @- <<EOF", `$(base64 < page.png | tr -d '\n')`, `"max_tokens": `},
+			python: []string{`open("page.png", "rb")`, `"type": "image_url"`, "max_tokens="}},
+	}
+	for _, c := range cases {
+		t.Run(c.model, func(t *testing.T) {
+			click(t, page.Locator(".example-tabs button[data-lang='curl']"))
+			click(t, page.Locator(".model-copy[data-model='"+c.model+"']"))
+			check(t, expect.Locator(page.Locator("#curl-model")).ToHaveText(c.model))
+			for _, want := range c.curl {
+				check(t, expect.Locator(code).ToContainText(want))
+			}
+			click(t, page.Locator(".example-tabs button[data-lang='python']"))
+			for _, want := range c.python {
+				check(t, expect.Locator(code).ToContainText(want))
+			}
+			for _, unwanted := range c.not {
+				check(t, expect.Locator(code).Not().ToContainText(unwanted))
+			}
+		})
+	}
+}
+
 // The base URL and the example each have a copy button of their own.
 //
 // Not parallel: the browser's contexts share one clipboard, and the other

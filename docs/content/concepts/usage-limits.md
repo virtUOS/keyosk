@@ -7,7 +7,8 @@ prices its models in (`BUDGET_UNIT` labels them on the page; default `$`).
 LiteLLM enforces spend directly, so the figure an admin enters is the figure
 the gateway enforces, whatever mix of models a key uses. A model priced at `0`
 or `null` accrues no spend, so a budget never binds on it; the server warns
-about such models at startup.
+at startup about each model with no price per token, per image, per pixel or
+per rerank query.
 
 Requests fail with HTTP 422 (`budget_exceeded`, "Budget has been exceeded!")
 once the allowance is spent and resume when the period resets. The TPM and RPM
@@ -21,7 +22,7 @@ that cannot cover that worst case reads as spent, and every other request on
 it is refused with the same 422. A client that sends its requests one after
 another never notices. Parallel or rapid requests on a small window, an hourly
 cap or the last part of a monthly one, with a model whose output limit is
-large, do. The dashboard's examples send `max_tokens` for this reason: a
+large, do. The dashboard's chat examples send `max_tokens` for this reason: a
 sensible value keeps the reservation small.
 
 The reservation stays on. Without it, parallel requests could overshoot a

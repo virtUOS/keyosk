@@ -28,8 +28,10 @@ model_list:
       input_cost_per_token: 0.01
       output_cost_per_token: 0.02
 
-  # Listed so the dashboard shows its embedding example for it; the portal
-  # decides that from the mode alone.
+  # Listed so the dashboard shows its example for each kind of model; the
+  # portal decides the kind from model_info alone. Each is priced in the unit
+  # LiteLLM bills it by, so the startup check for unpriced models sees them
+  # all priced.
   - model_name: mock-embed
     litellm_params:
       model: openai/mock-embed
@@ -37,3 +39,28 @@ model_list:
       input_cost_per_token: 0.001
     model_info:
       mode: embedding
+
+  - model_name: mock-rerank
+    litellm_params:
+      model: openai/mock-rerank
+      api_key: not-used
+      input_cost_per_query: 0.001
+    model_info:
+      mode: rerank
+
+  - model_name: mock-image
+    litellm_params:
+      model: openai/mock-image
+      api_key: not-used
+      output_cost_per_image: 0.04
+    model_info:
+      mode: image_generation
+
+  - model_name: mock-vision
+    litellm_params:
+      model: openai/mock-vision
+      api_key: not-used
+      input_cost_per_token: 0.001
+      output_cost_per_token: 0.002
+    model_info:
+      supports_vision: true

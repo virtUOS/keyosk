@@ -232,21 +232,28 @@ type modelInfoResponse struct {
 			// null for several models, which is why nothing may treat a
 			// missing mode as meaningful.
 			Mode string `json:"mode"`
+			// SupportsVision is whether the model reads images. Null, as
+			// for most models, reads as false.
+			SupportsVision bool `json:"supports_vision"`
 		} `json:"model_info"`
 	} `json:"data"`
 }
 
-// EmbeddingModels is the set of models the gateway serves as embedding models.
+// ModelKinds says which models the gateway serves are not chat models, and
+// what they are instead: keyprovider.KindEmbedding, KindRerank, KindImage or
+// KindVision.
 //
-// An embedding model takes a different endpoint and body than a chat model, so
-// the dashboard's example request has to know which it is showing. The gateway
-// is asked rather than the name inspected: "bge-m3" reads as an embedding model
-// to a human, but nothing guarantees the next one will.
+// An embedding model, a reranker or an image generator takes a different
+// endpoint and body than a chat model, and a model that reads images is best
+// shown reading one, so the dashboard's example request has to know which it
+// is showing. The gateway is asked rather than the name inspected: "bge-m3" reads
+// as an embedding model to a human, but nothing guarantees the next one will.
 //
-// A model whose mode is missing or null is deliberately NOT reported here.
-// Several models report no mode at all, and a chat example is the safe default
-// — it is what nearly every model on this gateway is.
-func (c *Client) EmbeddingModels(ctx context.Context) (map[string]bool, error) {
+// A model whose mode is missing, null or one this does not know is
+// deliberately NOT reported here unless it reads images. Several models report
+// no mode at all, and a chat example is the safe default — it is what nearly
+// every model on this gateway is.
+func (c *Client) ModelKinds(ctx context.Context) (map[string]string, error) {
 	resp, err := c.do(ctx, http.MethodGet, "/model/info", nil)
 	if err != nil {
 		return nil, err
@@ -263,10 +270,25 @@ func (c *Client) EmbeddingModels(ctx context.Context) (map[string]bool, error) {
 		return nil, fmt.Errorf("decode model list: %w", err)
 	}
 
-	out := make(map[string]bool)
+	out := make(map[string]string)
 	for _, m := range result.Data {
-		if m.ModelName != "" && m.ModelInfo.Mode == "embedding" {
-			out[m.ModelName] = true
+		var kind string
+		switch m.ModelInfo.Mode {
+		case "embedding":
+			kind = keyprovider.KindEmbedding
+		case "rerank":
+			kind = keyprovider.KindRerank
+		case "image_generation":
+			kind = keyprovider.KindImage
+		default:
+			if m.ModelInfo.SupportsVision {
+				kind = keyprovider.KindVision
+			}
+		}
+		// A model served by several deployments is listed once for each;
+		// one that says nothing does not undo another's kind.
+		if m.ModelName != "" && kind != "" {
+			out[m.ModelName] = kind
 		}
 	}
 	return out, nil

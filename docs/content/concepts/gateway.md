@@ -39,3 +39,20 @@ their budgets, until each key is updated again. If it has to be done, run
 unexpired key to the new users, which start with nothing spent. The old users
 are left in the gateway; don't delete them while another instance's keys still
 belong to them, as deleting a LiteLLM user also deletes its keys.
+
+## The dashboard's example requests
+
+Next to the models a key may use, the dashboard shows an example request for
+each, in curl and in Python. Which example a model gets depends on what the
+gateway's `/model/info` says about it:
+
+| `model_info`              | Example                                                   |
+| ------------------------- | --------------------------------------------------------- |
+| `mode: embedding`         | `/embeddings` with a text                                 |
+| `mode: rerank`            | `/rerank` with a query and documents to rank              |
+| `mode: image_generation`  | `/images/generations` with a prompt, saved to `image.png` |
+| `supports_vision: true`   | `/chat/completions` with a page image to transcribe       |
+| anything else, or nothing | `/chat/completions` with a short message                  |
+
+LiteLLM fills these in for the models it knows. For any other model, set
+them under the model's `model_info` in the LiteLLM configuration.
