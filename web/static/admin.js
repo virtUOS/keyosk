@@ -34,6 +34,8 @@ function filterCandidates(q) {
 // is gathered once, from its cells without the row menu, whose entries
 // ("Edit", "Revoke key") would otherwise match every row. Not from innerText:
 // a hidden row's innerText falls back to the raw text, menu included.
+// A count beside the heading follows the filter: "(3 / 52)" while it hides
+// rows, "(52)" when it does not.
 function rowText(tr) {
   return Array.from(tr.cells).filter(td => !td.classList.contains('cell-menu'))
     .map(td => td.textContent).join(' ').replace(/\s+/g, ' ').toLowerCase();
@@ -41,6 +43,7 @@ function rowText(tr) {
 document.querySelectorAll('.table-filter').forEach(input => {
   const tbody = document.getElementById(input.dataset.filter).tBodies[0];
   const noMatch = tbody.querySelector('.no-match');
+  const count = input.closest('.section-head').querySelector('.count');
   const rows = Array.from(tbody.rows).filter(r => !r.classList.contains('empty-row'))
     .map(r => [r, rowText(r)]);
   const apply = () => {
@@ -51,6 +54,10 @@ document.querySelectorAll('.table-filter').forEach(input => {
       if (!r.hidden) shown++;
     }
     noMatch.hidden = shown > 0 || rows.length === 0;
+    if (count) {
+      count.textContent = shown < rows.length
+        ? `(${shown} / ${rows.length})` : `(${rows.length})`;
+    }
   };
   input.addEventListener('input', apply);
   // A browser may bring the box back filled, on a reload or on the way back
