@@ -215,11 +215,23 @@ func TestUsersFilter(t *testing.T) {
 	goTo(t, page, "/admin#users")
 	box := page.Locator("#tab-users .table-filter")
 	noMatch := page.Locator("#tab-users .no-match")
+	count := page.Locator("#tab-users h2 .count")
+
+	// The heading counts every user, the rows on the page being all of them.
+	rows := page.Locator("#users-table tbody tr:not(.empty-row)")
+	total, err := rows.Count()
+	check(t, err)
+	all := fmt.Sprintf("(%d)", total)
+	check(t, expect.Locator(count).ToHaveText(all))
 
 	check(t, box.Fill("INTERN@"))
 	check(t, expect.Locator(userRow(page, "intern")).ToBeVisible())
 	check(t, expect.Locator(userRow(page, "nokey")).ToBeHidden())
 	check(t, expect.Locator(noMatch).ToBeHidden())
+	// While the filter hides rows, the count says how many are left of all.
+	shown, err := page.Locator("#users-table tbody tr:not(.empty-row):visible").Count()
+	check(t, err)
+	check(t, expect.Locator(count).ToHaveText(fmt.Sprintf("(%d / %d)", shown, total)))
 
 	// The row menu's entries are not searched, or every row would match.
 	check(t, box.Fill("Revoke key"))
@@ -237,6 +249,7 @@ func TestUsersFilter(t *testing.T) {
 	check(t, expect.Locator(userRow(page, "intern")).ToBeVisible())
 	check(t, expect.Locator(userRow(page, "nokey")).ToBeVisible())
 	check(t, expect.Locator(noMatch).ToBeHidden())
+	check(t, expect.Locator(count).ToHaveText(all))
 }
 
 // The filter box above the audit log keeps only the events containing the

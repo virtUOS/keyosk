@@ -73,7 +73,7 @@
     <div id="tab-profiles" class="tab-panel active">
 
       <div class="section-head">
-        <h2>{{T .Lang "admin.profiles"}}</h2>
+        <h2>{{T .Lang "admin.profiles"}} <span class="count">({{len .Profiles}})</span></h2>
         <button type="button" class="btn btn-sm btn-primary" id="profile-new">+ {{T .Lang "admin.form.new"}}</button>
       </div>
 
@@ -236,7 +236,7 @@
     <div id="tab-users" class="tab-panel">
 
       <div class="section-head">
-        <h2>{{T .Lang "admin.users"}}</h2>
+        <h2>{{T .Lang "admin.users"}} <span class="count">({{len .Users}})</span></h2>
         <input type="search" class="table-filter" data-filter="users-table" autocomplete="off"
                placeholder="{{T .Lang "admin.filter"}}" aria-label="{{T .Lang "admin.filter"}}">
       </div>
@@ -380,7 +380,7 @@
 
     <!-- ── Admins tab ─────────────────────────────────────── -->
     <div id="tab-admins" class="tab-panel">
-      <h2 style="margin-bottom:1.25rem">{{T .Lang "admin.admins"}}</h2>
+      <h2 style="margin-bottom:1.25rem">{{T .Lang "admin.admins"}} <span class="count">({{len .Admins}})</span></h2>
       <p class="text-muted" style="margin-bottom:1rem;font-size:.9rem">
         {{if .AdminGroup}}{{printf (T .Lang "admin.admins.group") .AdminGroup}}
         {{else}}{{T .Lang "admin.admins.note"}}{{end}}
@@ -463,6 +463,8 @@
 
     <!-- ── Audit tab ──────────────────────────────────────── -->
     <div id="tab-audit" class="tab-panel">
+      {{/* No count here: only the latest events are loaded, so their number
+           would not be the size of the log. */}}
       <div class="section-head">
         <h2>{{T .Lang "admin.audit"}}</h2>
         <input type="search" class="table-filter" data-filter="audit-table" autocomplete="off"
